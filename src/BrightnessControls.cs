@@ -221,12 +221,17 @@ namespace BrightnessScheduler
             Height = Theme.S(36);
         }
 
+        /// 範囲（既定は 0〜100）。Value より先に設定する
+        public int Minimum = 0, Maximum = 100;
+        /// 色を塗り始める値（既定は Minimum。ずらす量のように 0 を中心にしたいときに使う）
+        public int? FillFrom;
+
         public int Value
         {
             get { return value; }
             set
             {
-                int v = Math.Max(0, Math.Min(100, value));
+                int v = Math.Max(Minimum, Math.Min(Maximum, value));
                 if (v == this.value) return;
                 this.value = v;
                 Invalidate();
@@ -241,7 +246,13 @@ namespace BrightnessScheduler
         int ValueAt(int x)
         {
             var t = Track;
-            return (int)Math.Round((x - t.X) / t.Width * 100);
+            return Minimum + (int)Math.Round((x - t.X) / t.Width * (Maximum - Minimum));
+        }
+
+        float XOf(int v)
+        {
+            var t = Track;
+            return t.X + t.Width * (v - Minimum) / Math.Max(1f, Maximum - Minimum);
         }
 
         protected override void OnMouseDown(MouseEventArgs e)
@@ -292,8 +303,8 @@ namespace BrightnessScheduler
                 case Keys.Down: case Keys.Left: Value -= step; break;
                 case Keys.PageUp: Value += 10; break;
                 case Keys.PageDown: Value -= 10; break;
-                case Keys.Home: Value = 0; break;
-                case Keys.End: Value = 100; break;
+                case Keys.Home: Value = Minimum; break;
+                case Keys.End: Value = Maximum; break;
                 default: return;
             }
         }
@@ -316,8 +327,14 @@ namespace BrightnessScheduler
             var g = Begin(e, BackColor);
             var t = Track;
             Theme.FillRound(g, Theme.Track, t, t.Height / 2);
-            float kx = t.X + t.Width * value / 100f;
-            Theme.FillRound(g, Hover || dragging ? Theme.AccentHover : Theme.Accent, new RectangleF(t.X, t.Y, kx - t.X + t.Height / 2, t.Height), t.Height / 2);
+            float kx = XOf(value);
+            float fx = XOf(FillFrom ?? Minimum);
+            float x1 = Math.Min(fx, kx), x2 = Math.Max(fx, kx);
+            if (x2 - x1 > 0.5f || !FillFrom.HasValue)
+                Theme.FillRound(g, Hover || dragging ? Theme.AccentHover : Theme.Accent,
+                    new RectangleF(x1, t.Y, x2 - x1 + (FillFrom.HasValue ? 0 : t.Height / 2), t.Height), t.Height / 2);
+            if (FillFrom.HasValue)  // 中心の目印
+                using (var pen = new Pen(Theme.FgDim, Theme.Sf(1.5f))) g.DrawLine(pen, fx, t.Y - Theme.Sf(5), fx, t.Bottom + Theme.Sf(5));
             float outer = Theme.Sf(10), inner = Theme.Sf(Hover || dragging ? 6 : 5);
             using (var b = new SolidBrush(Theme.Surface)) g.FillEllipse(b, kx - outer, Height / 2f - outer, outer * 2, outer * 2);
             using (var pen = new Pen(Focused ? Theme.Accent : Theme.Border, 1f)) g.DrawEllipse(pen, kx - outer, Height / 2f - outer, outer * 2, outer * 2);

@@ -24,6 +24,13 @@ namespace BrightnessScheduler
     {
         public List<string> Names = new List<string>();     // 明るさを変える画面
         public List<string> Skipped = new List<string>();   // HDR がオンで対象外にしている画面
+        public List<DetectedMonitor> Monitors = new List<DetectedMonitor>();  // 補正の画面に出すもの（Names と同じ順）
+    }
+
+    public class DetectedMonitor
+    {
+        public string Id, Name;
+        public bool Hdr;
     }
 
     static class Display
@@ -82,8 +89,8 @@ namespace BrightnessScheduler
         const uint EDD_GET_DEVICE_INTERFACE_NAME = 1;
 
         /// 接続中の外付けモニターに対して処理する（終わったらハンドルを解放）
-        /// action の 2 つ目の引数は表示用の名前、3 つ目は \\.\DISPLAY1 などのデバイス名
-        static void ForEachPhysical(Action<PHYSICAL_MONITOR, string, string> action)
+        /// action の引数: モニター、表示用の名前、\\.\DISPLAY1 などのデバイス名、補正用の ID
+        static void ForEachPhysical(Action<PHYSICAL_MONITOR, string, string, string> action)
         {
             var handles = new List<IntPtr>();
             EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, delegate(IntPtr h, IntPtr dc, IntPtr r, IntPtr d) { handles.Add(h); return true; }, IntPtr.Zero);
@@ -96,10 +103,14 @@ namespace BrightnessScheduler
                 if (!GetPhysicalMonitorsFromHMONITOR(h, n, arr)) continue;
                 var mi = new MONITORINFOEX { Size = Marshal.SizeOf(typeof(MONITORINFOEX)) };
                 string device = GetMonitorInfo(h, ref mi) ? mi.Device : "";
+                string baseId = InterfaceId(device);
                 try
                 {
-                    foreach (var m in arr)
+                    for (int i = 0; i < arr.Length; i++)
                     {
+                        var m = arr[i];
+                        // 複製表示などで 1 つの画面に複数台あるときは、順番で見分ける
+                        string id = arr.Length == 1 ? baseId : baseId + "#" + i;
                         string name = CleanName(m.Description);
                         if (name == null)
                         {
@@ -108,11 +119,25 @@ namespace BrightnessScheduler
                             name = n == 1 ? EdidNameFor(h, edidNames) : null;
                             if (name == null) name = "モニター";
                         }
-                        action(m, name, device);
+                        action(m, name, device, id);
                     }
                 }
                 finally { DestroyPhysicalMonitors(n, arr); }
             }
+        }
+
+        /// モニターを見分ける ID（\\?\DISPLAY#IVM6633#5&xxx&UID4353#{...} を小文字にしたもの）。
+        /// HDR の画面の DISPLAYCONFIG_TARGET_DEVICE_NAME.monitorDevicePath と同じ形式
+        static string InterfaceId(string device)
+        {
+            try
+            {
+                var dd = new DISPLAY_DEVICE { Size = Marshal.SizeOf(typeof(DISPLAY_DEVICE)) };
+                if (!string.IsNullOrEmpty(device) && EnumDisplayDevices(device, 0, ref dd, EDD_GET_DEVICE_INTERFACE_NAME) && !string.IsNullOrEmpty(dd.DeviceID))
+                    return dd.DeviceID.ToLowerInvariant();
+            }
+            catch { }
+            return (device ?? "").ToLowerInvariant();
         }
 
         /// 説明文から「(HDMI1 HDR)」などを除いた名前。汎用の名前なら null
@@ -180,9 +205,21 @@ namespace BrightnessScheduler
             return false;
         }
 
+        public const string InternalId = "internal";
+
+        /// 補正をかけた、そのモニターに設定する値
+        static int Corrected(IList<MonitorCorrection> corrections, string id, int percent)
+        {
+            if (corrections != null)
+                foreach (var c in corrections)
+                    if (c != null && string.Equals(c.Id, id, StringComparison.OrdinalIgnoreCase)) return c.Apply(percent);
+            return percent;
+        }
+
         /// すべての画面の明るさを percent（0〜100）にする
         /// skipHdr: HDR がオンの画面には何もしない
-        public static ApplyResult SetAll(int percent, bool skipHdr)
+        /// corrections: モニターごとの補正（null なら補正なし）
+        public static ApplyResult SetAll(int percent, bool skipHdr, IList<MonitorCorrection> corrections)
         {
             percent = Math.Max(0, Math.Min(100, percent));
             var res = new ApplyResult { Requested = percent };
@@ -195,24 +232,24 @@ namespace BrightnessScheduler
             {
                 hdrSources.Add(t.Source);
                 if (skipHdr) continue;
-                if (Hdr.SetSdrBrightness(t, percent)) { res.Succeeded++; res.Names.Add(t.Name + "（HDR）"); }
+                if (Hdr.SetSdrBrightness(t, Corrected(corrections, t.Id, percent))) { res.Succeeded++; res.Names.Add(t.Name + "（HDR）"); }
                 else { res.Failed++; res.HdrFailed++; }
             }
 
-            ForEachPhysical(delegate(PHYSICAL_MONITOR m, string name, string device)
+            ForEachPhysical(delegate(PHYSICAL_MONITOR m, string name, string device, string id)
             {
                 if (hdrSources.Contains(device)) return;
                 uint cur = 0, max = 0;
                 bool read = Retry(delegate { return GetVCPFeatureAndVCPFeatureReply(m.Handle, VcpBrightness, IntPtr.Zero, out cur, out max); });
                 if (!read || max == 0) { res.Failed++; return; }  // DDC/CI 非対応（内蔵画面など）
-                uint value = (uint)Math.Round(max * percent / 100.0);
+                uint value = (uint)Math.Round(max * Corrected(corrections, id, percent) / 100.0);
                 bool ok = cur == value || Retry(delegate { return SetVCPFeature(m.Handle, VcpBrightness, value); });
                 if (ok) { res.Succeeded++; res.Names.Add(name); }
                 else res.Failed++;
             });
 
             // ノート PC の内蔵画面（WMI 経由）
-            int wmi = WmiSet(percent);
+            int wmi = WmiSet(Corrected(corrections, InternalId, percent));
             if (wmi > 0)
             {
                 res.Succeeded += wmi;
@@ -232,16 +269,27 @@ namespace BrightnessScheduler
             {
                 hdrSources.Add(t.Source);
                 if (skipHdr) res.Skipped.Add(t.Name);
-                else res.Names.Add(t.Name + "（HDR）");
+                else
+                {
+                    res.Names.Add(t.Name + "（HDR）");
+                    res.Monitors.Add(new DetectedMonitor { Id = t.Id, Name = t.Name, Hdr = true });
+                }
             }
-            ForEachPhysical(delegate(PHYSICAL_MONITOR m, string name, string device)
+            ForEachPhysical(delegate(PHYSICAL_MONITOR m, string name, string device, string id)
             {
                 if (hdrSources.Contains(device)) return;
                 uint cur, max;
                 if (Retry(delegate { return GetVCPFeatureAndVCPFeatureReply(m.Handle, VcpBrightness, IntPtr.Zero, out cur, out max); }))
+                {
                     res.Names.Add(name);
+                    res.Monitors.Add(new DetectedMonitor { Id = id, Name = name });
+                }
             });
-            if (WmiAvailable()) res.Names.Add("内蔵ディスプレイ");
+            if (WmiAvailable())
+            {
+                res.Names.Add("内蔵ディスプレイ");
+                res.Monitors.Add(new DetectedMonitor { Id = InternalId, Name = "内蔵ディスプレイ" });
+            }
             return res;
         }
 
@@ -298,6 +346,8 @@ namespace BrightnessScheduler
         public event Action<DetectResult> Detected;
         /// true: HDR がオンの画面は対象外（UI スレッドから設定し、ワーカーが読む）
         public volatile bool SkipHdr;
+        /// モニターごとの補正。UI スレッドでは書き換えず、差し替える（中身を変えるときは複製を渡す）
+        public volatile List<MonitorCorrection> Corrections;
 
         public BrightnessWorker()
         {
@@ -341,7 +391,7 @@ namespace BrightnessScheduler
                     if (value >= 0)
                     {
                         ApplyResult r;
-                        try { r = Display.SetAll(value, SkipHdr); }
+                        try { r = Display.SetAll(value, SkipHdr, Corrections); }
                         catch (Exception ex) { Debug.WriteLine(ex); r = new ApplyResult { Requested = value, Failed = 1 }; }
                         var a = Applied; if (a != null) a(r);
                     }

@@ -86,6 +86,56 @@ namespace BrightnessScheduler
         }
     }
 
+    /// モニター 1 台分の補正。スケジュールの明るさ（%）を、そのモニターに設定する値に変える
+    [DataContract]
+    public class MonitorCorrection
+    {
+        public const string Range = "range", Offset = "offset", Scale = "scale";
+
+        [DataMember(Order = 1)] public string Id { get; set; }      // モニターを見分ける ID（接続端子ごと）
+        [DataMember(Order = 2)] public string Name { get; set; }    // 表示用の名前
+        [DataMember(Order = 3)] public string Mode { get; set; }    // range / offset / scale
+        [DataMember(Order = 4)] public int Min { get; set; }        // 範囲: 0% のときの値
+        [DataMember(Order = 5)] public int Max { get; set; }        // 範囲: 100% のときの値
+        [DataMember(Order = 6)] public int Shift { get; set; }      // ずらす量（-50〜+50）
+        [DataMember(Order = 7)] public int Factor { get; set; }     // 倍率（%、0〜200）
+
+        /// 補正なしと同じ結果になる初期値
+        public static MonitorCorrection Default(string id, string name)
+        {
+            return new MonitorCorrection { Id = id, Name = name, Mode = Range, Min = 0, Max = 100, Shift = 0, Factor = 100 };
+        }
+
+        public MonitorCorrection Clone() { return (MonitorCorrection)MemberwiseClone(); }
+
+        /// スケジュールの明るさ percent を、このモニターに設定する値（0〜100）にする
+        public int Apply(int percent)
+        {
+            double v;
+            switch (Mode)
+            {
+                case Offset: v = percent + Shift; break;
+                case Scale: v = percent * Factor / 100.0; break;
+                default: v = Min + (Max - Min) * percent / 100.0; break;
+            }
+            return Math.Max(0, Math.Min(100, (int)Math.Round(v)));
+        }
+
+        /// 補正なしと同じか
+        public bool IsIdentity
+        {
+            get
+            {
+                switch (Mode)
+                {
+                    case Offset: return Shift == 0;
+                    case Scale: return Factor == 100;
+                    default: return Min == 0 && Max == 100;
+                }
+            }
+        }
+    }
+
     [DataContract]
     public class Settings
     {
@@ -94,6 +144,8 @@ namespace BrightnessScheduler
         /// true: HDR がオンのモニターには何もしない（Windows の「SDR コンテンツの明るさ」を書き換えない）
         /// 古い設定ファイルに無い項目は false になるので、「対象外にする」の向きで持つ
         [DataMember(Order = 3)] public bool SkipHdr { get; set; }
+        /// モニターごとの補正（つながっていないモニターの補正も残しておく）
+        [DataMember(Order = 4)] public List<MonitorCorrection> Corrections { get; set; }
 
         public static readonly string Dir = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "BrightnessScheduler");
@@ -120,6 +172,8 @@ namespace BrightnessScheduler
             if (s == null) s = new Settings();
             if (s.Entries == null) s.Entries = new List<ScheduleEntry>();
             s.Entries.RemoveAll(e => e == null || !e.IsValid);
+            if (s.Corrections == null) s.Corrections = new List<MonitorCorrection>();
+            s.Corrections.RemoveAll(c => c == null || string.IsNullOrEmpty(c.Id));
             return s;
         }
 

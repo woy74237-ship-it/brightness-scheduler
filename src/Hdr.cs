@@ -12,6 +12,7 @@ namespace BrightnessScheduler
     {
         public string Source;   // \\.\DISPLAY2 など（MONITORINFOEX.Device と同じ形式）
         public string Name;     // モニターの名前
+        public string Id;       // 補正用の ID（\\?\DISPLAY#...#{...} を小文字にしたもの）
         internal Hdr.LUID Adapter;
         internal uint TargetId;
     }
@@ -108,11 +109,13 @@ namespace BrightnessScheduler
 
                     var src = new SOURCE_NAME { h = Header<SOURCE_NAME>(GET_SOURCE_NAME, paths[i].source.adapterId, paths[i].source.id) };
                     var tn = new TARGET_NAME { h = Header<TARGET_NAME>(GET_TARGET_NAME, t.adapterId, t.id) };
-                    string name = DisplayConfigGetDeviceInfo(ref tn) == 0 && !string.IsNullOrEmpty(tn.friendlyName) ? tn.friendlyName : "モニター";
+                    bool hasName = DisplayConfigGetDeviceInfo(ref tn) == 0;
+                    string name = hasName && !string.IsNullOrEmpty(tn.friendlyName) ? tn.friendlyName : "モニター";
+                    string source = DisplayConfigGetDeviceInfo(ref src) == 0 ? src.name : "";
                     list.Add(new HdrTarget
                     {
-                        Source = DisplayConfigGetDeviceInfo(ref src) == 0 ? src.name : "",
-                        Name = name, Adapter = t.adapterId, TargetId = t.id
+                        Source = source, Name = name, Adapter = t.adapterId, TargetId = t.id,
+                        Id = (hasName && !string.IsNullOrEmpty(tn.devicePath) ? tn.devicePath : source).ToLowerInvariant()
                     });
                 }
             }

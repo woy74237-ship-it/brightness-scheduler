@@ -90,12 +90,13 @@ namespace BrightnessScheduler
         readonly ToggleSwitch startupToggle;
         readonly FlatButton startupWarning;
         readonly ToggleSwitch hdrToggle;
+        readonly FlatButton correctionButton;
         readonly FlatButton aboutButton;
         readonly Timer clock;
         readonly ToolTip tips;
         bool updating, updatingStartup, showStartupWarning;
 
-        public event EventHandler SettingsChanged, ApplyNowRequested;
+        public event EventHandler SettingsChanged, ApplyNowRequested, CorrectionsRequested;
 
         /// statusProvider: 画面への反映状況の文字列（先頭が "!" ならエラー）
         public MainForm(Settings settings, Icon icon, Func<string> statusProvider, Action<int> preview)
@@ -183,7 +184,11 @@ namespace BrightnessScheduler
                 "Windows の「設定 > ディスプレイ > HDR > SDR コンテンツの明るさ」を変えます。\n" +
                 "オフにすると、HDR がオンのモニターには何もしません。");
 
-            Controls.AddRange(new Control[] { header, sectionTitle, countLabel, addButton, cardPanel, monitorLabel, hdrToggle, startupToggle, startupWarning, aboutButton });
+            correctionButton = new FlatButton { Text = "モニターごとの補正", Glyph = Glyphs.Monitor, Kind = ButtonKind.Subtle, Font = Theme.Small };
+            correctionButton.Click += delegate { if (CorrectionsRequested != null) CorrectionsRequested(this, EventArgs.Empty); };
+            tips.SetToolTip(correctionButton, "同じ明るさでもモニターによって見え方が違うときに、モニターごとに調整します");
+
+            Controls.AddRange(new Control[] { header, sectionTitle, countLabel, addButton, cardPanel, monitorLabel, correctionButton, hdrToggle, startupToggle, startupWarning, aboutButton });
             RefreshStartupState();
 
             clock = new Timer { Interval = 15000 };
@@ -216,7 +221,7 @@ namespace BrightnessScheduler
 
         void DoLayout()
         {
-            if (header == null || startupWarning == null || hdrToggle == null) return;
+            if (header == null || startupWarning == null || hdrToggle == null || correctionButton == null) return;
             int pad = Theme.S(24), w = ClientSize.Width - pad * 2, btnH = Theme.S(34);
             header.SetBounds(pad, pad, w, Theme.S(270));
 
@@ -228,9 +233,15 @@ namespace BrightnessScheduler
 
             // 下部: 1 段目に対象のモニター、2 段目にスイッチ類
             int footerY = ClientSize.Height - pad - btnH;
-            monitorLabel.MaximumSize = new Size(w, 0);
-            int monitorY = footerY - Theme.S(10) - monitorLabel.Height;
-            monitorLabel.Location = new Point(pad, monitorY);
+            int rowH = Theme.S(30);
+            int monitorY = footerY - Theme.S(8) - rowH;
+            int cbw = correctionButton.PreferredWidth();
+            correctionButton.SetBounds(pad + w - cbw, monitorY, cbw, rowH);
+            monitorLabel.MaximumSize = new Size(Math.Max(Theme.S(60), w - cbw - Theme.S(16)), 0);
+            monitorLabel.AutoEllipsis = true;
+            monitorLabel.AutoSize = false;
+            monitorLabel.SetBounds(pad, monitorY, Math.Max(Theme.S(60), w - cbw - Theme.S(16)), rowH);
+            monitorLabel.TextAlign = ContentAlignment.MiddleLeft;
             int listBottom = monitorY - Theme.S(16);
             if (showStartupWarning)
             {

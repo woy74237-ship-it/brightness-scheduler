@@ -37,7 +37,7 @@ namespace BrightnessScheduler
             var forceHandle = invoker.Handle; // 他スレッドのイベントを UI スレッドへ戻すため
 
             skipHdr = settings.SkipHdr;
-            worker = new BrightnessWorker { SkipHdr = skipHdr };
+            worker = new BrightnessWorker { SkipHdr = skipHdr, Corrections = CopyCorrections() };
             worker.Applied += r => RunOnUi(delegate { OnApplied(r); });
             worker.Detected += found => RunOnUi(delegate
             {
@@ -249,10 +249,47 @@ namespace BrightnessScheduler
                 Check(false);
             };
             form.ApplyNowRequested += delegate { Check(true); };
+            form.CorrectionsRequested += delegate { ShowCorrections(); };
             var thisForm = form;
             form.FormClosed += delegate { if (form == thisForm) form = null; thisForm.Dispose(); };
             form.Show();
             form.Activate();
+        }
+
+        List<MonitorCorrection> CopyCorrections()
+        {
+            var list = new List<MonitorCorrection>();
+            foreach (var c in settings.Corrections) list.Add(c.Clone());
+            return list;
+        }
+
+        /// モニターごとの補正の画面
+        void ShowCorrections()
+        {
+            if (form == null || form.IsDisposed) return;
+            // 画面の一覧がまだ無ければ、その場で調べる（DDC/CI の読み取りで少し時間がかかる）
+            DetectResult found = monitors;
+            if (found == null)
+            {
+                Cursor.Current = Cursors.WaitCursor;
+                try { found = Display.Detect(skipHdr); } catch { found = new DetectResult(); }
+                Cursor.Current = Cursors.Default;
+            }
+            int target = Scheduler.TargetPercent(settings.Entries, DateTime.Now);
+            using (var dlg = new CorrectionDialog(found.Monitors, settings.Corrections, target < 0 ? 50 : target,
+                (pct, corrections) => { worker.Corrections = corrections; worker.Request(pct); }))
+            {
+                bool ok = dlg.ShowDialog(form) == DialogResult.OK;
+                if (ok)
+                {
+                    settings.Corrections = dlg.Result;
+                    TrySave();
+                }
+                worker.Corrections = CopyCorrections();
+                // プレビューで変えた明るさを戻す／保存した補正をすぐ反映する
+                if (dlg.Previewed) Check(true);
+                else if (ok && !settings.Paused) Check(true);
+            }
         }
 
         bool aboutOpen;
