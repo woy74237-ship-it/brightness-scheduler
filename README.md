@@ -4,6 +4,9 @@
 
 🌐 紹介ページ: **https://woy74237-ship-it.github.io/brightness-scheduler/**
 
+📝 紹介記事
+- 使い方の紹介（note）: [夜になると画面がまぶしい…を解決！明るさが時刻で自動で変わる無料の Windows アプリ「輝度スケジューラ」を作りました](https://note.com/quiet_raven5890/n/nb5c7d3046c02)
+
 ## ダウンロード
 
 **[最新版をダウンロード（GitHub Releases）](https://github.com/woy74237-ship-it/brightness-scheduler/releases/latest)**
