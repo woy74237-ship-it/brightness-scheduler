@@ -48,7 +48,7 @@ namespace BrightnessScheduler
             openItem.Font = Theme.BodySemi;
             menu.Items.Add(openItem);
             menu.Items.Add(Theme.MenuItem("今すぐ適用", delegate { Check(true); }));
-            autoItem = Theme.MenuItem("自動調整", delegate { TogglePause(); });
+            autoItem = Theme.MenuItem("明るさの自動変更", delegate { TogglePause(); });
             autoItem.Checked = !settings.Paused;
             menu.Items.Add(autoItem);
             menu.Items.Add(new ToolStripSeparator());
@@ -190,7 +190,7 @@ namespace BrightnessScheduler
             string text = AppInfo.Name;
             var now = DateTime.Now;
             int target = Scheduler.TargetPercent(settings.Entries, now);
-            if (settings.Paused) text += "\n自動調整は停止中";
+            if (settings.Paused) text += "\n明るさの自動変更は停止中";
             else if (target < 0) text += "\nスケジュール未設定";
             else
             {

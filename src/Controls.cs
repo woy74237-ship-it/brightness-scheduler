@@ -141,9 +141,26 @@ namespace BrightnessScheduler
             }
         }
 
+        /// true: ラベルの後ろに今の状態（オン／オフ）を表示する
+        public bool ShowState { get; set; }
+
+        const string OnText = "オン", OffText = "オフ";
+
+        Font StateFont { get { return Font.Size >= Theme.Body.Size ? Theme.BodySemi : Font; } }
+
+        int StateWidth
+        {
+            get
+            {
+                if (!ShowState) return 0;
+                return Theme.S(8) + Math.Max(Theme.Measure(OnText, StateFont).Width, Theme.Measure(OffText, StateFont).Width);
+            }
+        }
+
         public void FitWidth()
         {
-            Width = Theme.S(40) + Theme.S(12) + Theme.Measure(Text, Font).Width + Theme.S(4);
+            // オン／オフで幅が変わらないよう、長いほうに合わせる
+            Width = Theme.S(40) + Theme.S(12) + Theme.Measure(Text, Font).Width + StateWidth + Theme.S(4);
         }
 
         protected override void OnClick(EventArgs e)
@@ -174,7 +191,14 @@ namespace BrightnessScheduler
                 using (var b = new SolidBrush(Theme.FgDim))
                     g.FillEllipse(b, cx - kd / 2, ty + th / 2f - kd / 2, kd, kd);
             }
-            Theme.DrawText(g, Text, Font, Theme.Fg, new Rectangle(tw + Theme.S(12), 0, Width - tw - Theme.S(12), Height), Theme.Left);
+            int lx = tw + Theme.S(12);
+            Theme.DrawText(g, Text, Font, Theme.Fg, new Rectangle(lx, 0, Width - lx - StateWidth, Height), Theme.Left);
+            if (ShowState)
+            {
+                int sx = lx + Theme.Measure(Text, Font).Width + Theme.S(8);
+                Theme.DrawText(g, on ? OnText : OffText, StateFont, on ? Theme.Fg : Theme.FgDim,
+                    new Rectangle(sx, 0, Math.Max(0, Width - sx), Height), Theme.Left);
+            }
         }
     }
 

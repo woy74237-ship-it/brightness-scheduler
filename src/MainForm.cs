@@ -23,7 +23,7 @@ namespace BrightnessScheduler
         {
             BackColor = Theme.Surface;
             ApplyButton = new FlatButton { Text = "今すぐ適用", Glyph = Glyphs.Refresh, Kind = ButtonKind.Standard };
-            AutoToggle = new ToggleSwitch { Text = "自動調整" };
+            AutoToggle = new ToggleSwitch { Text = "明るさの自動変更", ShowState = true };
             Chart = new BrightnessChart();
             Controls.AddRange(new Control[] { ApplyButton, AutoToggle, Chart });
         }
@@ -51,19 +51,22 @@ namespace BrightnessScheduler
             var ir = IconRect;
             Theme.FillRound(g, Theme.Track, ir, Theme.S(10));
             SunIcon.Draw(g, new RectangleF(ir.X + Theme.S(14), ir.Y + Theme.S(14), ir.Width - Theme.S(28), ir.Height - Theme.S(28)),
-                Math.Max(0, Target), Target < 0 ? Theme.FgDim : Theme.Accent);
+                Math.Max(0, Target), Target < 0 || Paused ? Theme.FgDim : Theme.Accent);
 
+            // 停止中は画面の実際の明るさとは限らないので「スケジュール上の明るさ」と書く
             int tx = ir.Right + Theme.S(20), tw = AutoToggle.Left - tx - Theme.S(12);
-            Theme.DrawText(g, Paused ? "現在の明るさ  ·  自動調整は停止中" : "現在の明るさ", Theme.Small, Theme.FgDim,
+            Theme.DrawText(g, Paused ? "スケジュール上の明るさ  ·  停止中" : "現在の明るさ", Theme.Small, Theme.FgDim,
                 new Rectangle(tx, Theme.S(16), tw, Theme.S(20)), Theme.Left);
 
             string big = Target < 0 ? "スケジュールがありません" : Target + "%";
             var font = Target < 0 ? Theme.Title : Theme.TimeBig;
-            Theme.DrawText(g, big, font, Theme.Fg, new Rectangle(tx, Theme.S(36), tw, Theme.S(46)), Theme.Left);
+            Theme.DrawText(g, big, font, Paused && Target >= 0 ? Theme.FgDim : Theme.Fg, new Rectangle(tx, Theme.S(36), tw, Theme.S(46)), Theme.Left);
 
             string sub;
             var now = DateTime.Now;
             if (Target < 0) sub = "「追加」から時刻と明るさを登録してください";
+            // 停止中は明るさを変えないので、「変化中」「次は〜」は出さない
+            else if (Paused) sub = "停止中のため、明るさは変えません";
             else if (Next == null) sub = "毎日この明るさにします";
             else if (Fading) sub = Next.Time + " に " + Next.Brightness + "% へ向けて変化中（あと " + Scheduler.Remaining(Next.TimeOfDay, now) + "）";
             else sub = "次は " + Next.Time + " に " + Next.Brightness + "%（あと " + Scheduler.Remaining(Next.TimeOfDay, now) + "）";
@@ -141,7 +144,7 @@ namespace BrightnessScheduler
 
             monitorLabel = Theme.MakeLabel("モニターを確認中…", Theme.Small, Theme.FgDim, Theme.Bg);
 
-            startupToggle = new ToggleSwitch { Text = "Windows の起動時に開始" };
+            startupToggle = new ToggleSwitch { Text = "Windows の起動時に開始", ShowState = true };
             startupToggle.CheckedChanged += delegate
             {
                 if (updatingStartup) return;
