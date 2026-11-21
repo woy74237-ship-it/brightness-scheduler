@@ -11,6 +11,9 @@ published: false
   ・画像 3 枚（docs/images/main.png, edit.png, correction.png）をエディタにドラッグ＆ドロップしてアップロードし、
     下の ![...](images/...) をアップロード後の URL に差し替えてください（tools/make-screenshots.ps1 で生成）。
   ・準備ができたら上の published を true にして公開します（Web エディタなら「公開する」ボタン）。
+  ・Web エディタでは上の title / emoji / topics は使われないので、「公開設定」で
+    絵文字 🌗、トピック（csharp, windows, winforms, ddcci, 個人開発）、カテゴリー Tech を設定してください。
+  ・太字の閉じの ** の直前が「）」などの記号で、直後が文字だと、太字にならず ** がそのまま表示されます。
 -->
 
 夜になると、昼間はちょうどよかったモニターがまぶしく感じる。かといって毎晩モニターのボタンで暗くするのは面倒……ということで、**決めた時刻にディスプレイの明るさを自動で変える** Windows アプリ「輝度スケジューラ」を作りました。
@@ -110,7 +113,7 @@ bool hdr = (color.value & 2) != 0;   // advancedColorEnabled
 
 読み取りは公開されている `DISPLAYCONFIG_DEVICE_INFO_GET_SDR_WHITE_LEVEL`（11）です。値は **1000 = 80 nits** の単位で返ってきます。
 
-書き込みには公開された API がないのですが、Windows の設定画面が使っている**非公開のタイプ `0xFFFFFFEE`（-18）**を `DisplayConfigSetDeviceInfo` に渡すと変えられます。
+書き込みには公開された API がないのですが、Windows の設定画面が使っている**非公開のタイプ `0xFFFFFFEE`**（-18）を `DisplayConfigSetDeviceInfo` に渡すと変えられます。
 
 ```csharp
 [StructLayout(LayoutKind.Sequential)]

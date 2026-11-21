@@ -178,7 +178,8 @@
   .faq details p { margin: 0 0 16px; color: var(--text-dim); }
 
   /* リンク・応援 */
-  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+  @media (max-width: 1000px) { .cards { grid-template-columns: repeat(2, 1fr); } }
   .card {
     display: block; background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
     padding: 20px 22px; text-decoration: none; color: var(--text); transition: transform .15s ease, box-shadow .15s ease;
@@ -412,6 +413,11 @@
           <span class="kicker">note</span>
           <span class="title">使い方の紹介</span>
           <span class="desc">おすすめの使い方や、2 台のモニターのそろえ方。</span>
+        </a>
+        <a class="card" href="https://zenn.dev/walt_owen/articles/4b5cab6cb4d673">
+          <span class="kicker">Zenn</span>
+          <span class="title">作り方の解説</span>
+          <span class="desc">DDC/CI と、HDR の SDR 明るさを変える仕組み。</span>
         </a>
         <a class="card" href="https://github.com/woy74237-ship-it/brightness-scheduler">
           <span class="kicker">GitHub</span>
