@@ -168,7 +168,7 @@ namespace BrightnessScheduler
         }
 
         /// その時刻の明るさ（%）。スケジュールが空なら -1
-        /// 次の項目が「なめらか」なら、直前の項目の時刻から次の項目の時刻までを直線でつなぐ
+        /// 次の項目が「なめらか」なら、直前の項目の時刻から次の項目の時刻までを S 字の曲線でつなぐ
         public static double TargetAt(IEnumerable<ScheduleEntry> entries, TimeSpan t)
         {
             var list = Sorted(entries);
@@ -183,6 +183,8 @@ namespace BrightnessScheduler
             double elapsed = (t - prev.TimeOfDay).TotalMinutes;
             if (elapsed < 0) elapsed += 1440;
             double f = Math.Max(0, Math.Min(1, elapsed / span));
+            // ゆっくり始まって、ゆっくり終わる曲線（smoothstep）。始まりと終わりで急に変わり始めない
+            f = f * f * (3 - 2 * f);
             return prev.Brightness + (next.Brightness - prev.Brightness) * f;
         }
 
