@@ -13,9 +13,9 @@ using Microsoft.Win32;
 [assembly: System.Reflection.AssemblyTitle("輝度スケジューラ")]
 [assembly: System.Reflection.AssemblyDescription("指定した時刻にディスプレイの明るさを変えるアプリ")]
 [assembly: System.Reflection.AssemblyProduct("輝度スケジューラ")]
-[assembly: System.Reflection.AssemblyVersion("0.1.0.0")]
-[assembly: System.Reflection.AssemblyFileVersion("0.1.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersion("0.1.0")]
+[assembly: System.Reflection.AssemblyVersion("1.0.0.0")]
+[assembly: System.Reflection.AssemblyFileVersion("1.0.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersion("1.0.0")]
 
 namespace BrightnessScheduler
 {
@@ -26,7 +26,7 @@ namespace BrightnessScheduler
 
         // ▼ 支援ページと公式ページの URL（https:// で始まる URL を入れるとボタンが表示されます。空欄なら非表示）
         public const string SupportUrl = "https://ofuse.me/c0fdccc4";
-        public const string WebsiteUrl = "";
+        public const string WebsiteUrl = "https://github.com/woy74237-ship-it/brightness-scheduler";
 
         public static bool HasSupport { get { return IsWebUrl(SupportUrl); } }
         public static bool HasWebsite { get { return IsWebUrl(WebsiteUrl); } }

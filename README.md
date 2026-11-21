@@ -2,6 +2,18 @@
 
 指定した時刻にディスプレイの明るさを自動で変えるタスクトレイ常駐アプリです（[壁紙スケジューラ](https://github.com/woy74237-ship-it/wallpaper-scheduler) の明るさ版）。
 
+## ダウンロード
+
+**[最新版をダウンロード（GitHub Releases）](https://github.com/woy74237-ship-it/brightness-scheduler/releases/latest)**
+
+`BrightnessScheduler-v〇.〇.〇.zip` を展開して `BrightnessScheduler.exe` を起動するだけで使えます（インストール不要・Windows 10 / 11 対応）。
+初回起動時に「Windows によって PC が保護されました」と表示された場合は、「詳細情報」→「実行」で起動できます。
+
+## 開発の支援
+
+無料でお使いいただけます。気に入っていただけたら、[OFUSE](https://ofuse.me/c0fdccc4) から応援していただけるとうれしいです。
+「こんな機能がほしい」といった要望も、[Issues](https://github.com/woy74237-ship-it/brightness-scheduler/issues) でお待ちしています。
+
 ## 使い方
 
 1. `BrightnessScheduler.exe` を起動（初回は設定画面が開きます）
@@ -68,6 +80,30 @@ HDR がオンのあいだは、多くのモニターで本体の明るさを変�
 ```
 
 `bin\BrightnessScheduler.exe` が生成されます。
+
+## 配布用 ZIP の作成
+
+```powershell
+.\package.ps1
+```
+
+`dist\BrightnessScheduler-v<バージョン>.zip`（exe と利用者向けの `assets\README.txt`）と、
+改ざん確認用の `.zip.sha256` が生成されます。
+作成した ZIP は Microsoft Defender で自動的にスキャンし、検出された場合は ZIP を削除して中止します
+（スキャン単体でも `.\tools\scan-file.ps1 <ファイル>` で実行できます）。
+
+リリースの手順:
+
+1. `src/Core.cs` 先頭のバージョン（3 か所）を上げる
+2. `.\package.ps1` を実行（Defender のスキャンで検出されたら公開しない）
+3. コミットしてタグを付け、GitHub に push する（例: `git tag v1.0.1`）
+4. **プレリリースとして** Release を作る（`gh release create ... --prerelease`。最新版にはならない）
+5. **自分の PC で実際に試す**（Release のページから ZIP をダウンロード → 展開 → 起動）
+6. 問題がなければ、最新版に切り替える（`gh release edit <タグ> --prerelease=false --latest`）
+
+> ローカルのスキャンは「既に判定済みのファイル」しか検出できないことがあります。
+> 新しく作ったファイルは、ダウンロードや実行のときに初めてクラウドで判定されるため、
+> 手順 5 の「実際にダウンロードして試す」を省略しないこと。
 
 アイコンのデザインを変えたときは `tools/MakeIcon.cs` を編集し、`.\tools\make-icon.ps1` で `assets/app.ico` を再生成します。
 
