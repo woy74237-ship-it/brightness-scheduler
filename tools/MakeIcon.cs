@@ -7,10 +7,16 @@ using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.IO;
 
-class MakeIcon
+partial class MakeIcon
 {
+    /// 宣伝用の画像（tools\Promo.cs）。make-icon.ps1 では Promo.cs を含めないので、何もしない
+    static partial void RunPromo(string[] args, ref bool handled);
+
     static void Main(string[] args)
     {
+        bool handled = false;
+        RunPromo(args, ref handled);
+        if (handled) return;
         if (args.Length < 1) { Console.Error.WriteLine("usage: MakeIcon <out.ico> [preview.png]"); Environment.Exit(1); }
         int[] sizes = { 16, 20, 24, 32, 40, 48, 64, 256 };
         var images = new List<byte[]>();

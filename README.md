@@ -2,6 +2,8 @@
 
 指定した時刻にディスプレイの明るさを自動で変えるタスクトレイ常駐アプリです（[壁紙スケジューラ](https://github.com/woy74237-ship-it/wallpaper-scheduler) の明るさ版）。
 
+🌐 紹介ページ: **https://woy74237-ship-it.github.io/brightness-scheduler/**
+
 ## ダウンロード
 
 **[最新版をダウンロード（GitHub Releases）](https://github.com/woy74237-ship-it/brightness-scheduler/releases/latest)**
@@ -106,6 +108,17 @@ HDR がオンのあいだは、多くのモニターで本体の明るさを変�
 > 手順 5 の「実際にダウンロードして試す」を省略しないこと。
 
 アイコンのデザインを変えたときは `tools/MakeIcon.cs` を編集し、`.\tools\make-icon.ps1` で `assets/app.ico` を再生成します。
+
+## 紹介ページ・記事
+
+紹介ページは `site/` にあり、main ブランチに push すると GitHub Actions（`.github/workflows/pages.yml`）で
+GitHub Pages に公開されます。記事の原稿は `docs/note.md`（note 用）と `docs/zenn.md`（Zenn 用）です。
+
+画像は次のスクリプトで作ります（`promo/` と `docs/images/` は手元だけの素材で、Git には含めません）。
+
+1. `.\tools\make-screenshots.ps1` … アプリのスクリーンショット（サンプルのスケジュールと架空のモニター名で撮影。明るさは変えない）を `docs/images/` に
+2. `.\tools\make-promo.ps1` … シェア用画像（OGP）・note の見出し画像・背景を `promo/` に
+3. `.\tools\make-site-assets.ps1` … 1・2 とアイコンから、紹介ページ用の画像を `site/images/` に
 
 ## ファイル構成
 
