@@ -89,6 +89,7 @@ namespace BrightnessScheduler
         readonly FlowLayoutPanel cardPanel;
         readonly ToggleSwitch startupToggle;
         readonly FlatButton startupWarning;
+        readonly ToggleSwitch hdrToggle;
         readonly FlatButton aboutButton;
         readonly Timer clock;
         readonly ToolTip tips;
@@ -170,7 +171,19 @@ namespace BrightnessScheduler
             aboutButton.Click += delegate { AboutDialog.ShowFor(this); };
             tips.SetToolTip(aboutButton, AppInfo.HasSupport ? "このアプリについて・開発の支援" : "このアプリについて");
 
-            Controls.AddRange(new Control[] { header, sectionTitle, countLabel, addButton, cardPanel, monitorLabel, startupToggle, startupWarning, aboutButton });
+            hdrToggle = new ToggleSwitch { Text = "HDR のモニターも変える", ShowState = true, Checked = !settings.SkipHdr };
+            hdrToggle.CheckedChanged += delegate
+            {
+                if (updating) return;
+                settings.SkipHdr = !hdrToggle.Checked;
+                Changed(false);
+            };
+            tips.SetToolTip(hdrToggle,
+                "HDR がオンのモニターは、本体の明るさを変えても表示に反映されないため、\n" +
+                "Windows の「設定 > ディスプレイ > HDR > SDR コンテンツの明るさ」を変えます。\n" +
+                "オフにすると、HDR がオンのモニターには何もしません。");
+
+            Controls.AddRange(new Control[] { header, sectionTitle, countLabel, addButton, cardPanel, monitorLabel, hdrToggle, startupToggle, startupWarning, aboutButton });
             RefreshStartupState();
 
             clock = new Timer { Interval = 15000 };
@@ -203,7 +216,7 @@ namespace BrightnessScheduler
 
         void DoLayout()
         {
-            if (header == null || startupWarning == null) return;
+            if (header == null || startupWarning == null || hdrToggle == null) return;
             int pad = Theme.S(24), w = ClientSize.Width - pad * 2, btnH = Theme.S(34);
             header.SetBounds(pad, pad, w, Theme.S(270));
 
@@ -213,13 +226,17 @@ namespace BrightnessScheduler
             countLabel.Location = new Point(sectionTitle.Right + Theme.S(4), sectionTitle.Bottom - countLabel.Height - Theme.S(2));
             y += btnH + Theme.S(14);
 
+            // 下部: 1 段目に対象のモニター、2 段目にスイッチ類
             int footerY = ClientSize.Height - pad - btnH;
-            int listBottom = footerY - Theme.S(20);
+            monitorLabel.MaximumSize = new Size(w, 0);
+            int monitorY = footerY - Theme.S(10) - monitorLabel.Height;
+            monitorLabel.Location = new Point(pad, monitorY);
+            int listBottom = monitorY - Theme.S(16);
             if (showStartupWarning)
             {
                 int ww = Math.Min(w, startupWarning.PreferredWidth());
                 int wh = Theme.S(30);
-                startupWarning.SetBounds(pad + w - ww, footerY - Theme.S(8) - wh, ww, wh);
+                startupWarning.SetBounds(pad + w - ww, monitorY - Theme.S(6) - wh, ww, wh);
                 listBottom = startupWarning.Top - Theme.S(10);
             }
             cardPanel.SetBounds(pad, y, w, Math.Max(Theme.S(60), listBottom - y));
@@ -227,8 +244,8 @@ namespace BrightnessScheduler
             aboutButton.SetBounds(pad + w - btnH, footerY, btnH, btnH);
             startupToggle.FitWidth();
             startupToggle.SetBounds(aboutButton.Left - Theme.S(16) - startupToggle.Width, footerY, startupToggle.Width, btnH);
-            monitorLabel.MaximumSize = new Size(Math.Max(Theme.S(60), startupToggle.Left - pad - Theme.S(16)), 0);
-            monitorLabel.Location = new Point(pad, footerY + (btnH - monitorLabel.Height) / 2);
+            hdrToggle.FitWidth();
+            hdrToggle.SetBounds(pad, footerY, Math.Min(hdrToggle.Width, startupToggle.Left - pad - Theme.S(16)), btnH);
             FitCards();
         }
 
@@ -256,13 +273,18 @@ namespace BrightnessScheduler
         }
 
         /// 見つかったモニターを下部に表示
-        public void SetMonitors(List<string> names)
+        public void SetMonitors(DetectResult found)
         {
-            if (names == null) return;
-            monitorLabel.Text = names.Count == 0
-                ? "明るさを変えられるモニターが見つかりません（モニターの設定で DDC/CI をオンにしてください）"
+            if (found == null) return;
+            var names = found.Names;
+            string text = names.Count == 0
+                ? (found.Skipped.Count > 0
+                    ? "明るさを変えるモニターがありません"
+                    : "明るさを変えられるモニターが見つかりません（モニターの設定で DDC/CI をオンにしてください）")
                 : "対象: " + string.Join("、", names);
-            monitorLabel.ForeColor = names.Count == 0 ? Theme.Danger : Theme.FgDim;
+            if (found.Skipped.Count > 0) text += "　（対象外: " + string.Join("、", found.Skipped) + " は HDR のため）";
+            monitorLabel.Text = text;
+            monitorLabel.ForeColor = names.Count == 0 && found.Skipped.Count == 0 ? Theme.Danger : Theme.FgDim;
             tips.SetToolTip(monitorLabel, monitorLabel.Text);
             DoLayout();
         }

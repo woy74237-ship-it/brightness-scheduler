@@ -21,9 +21,10 @@ namespace BrightnessScheduler
         MainForm form;
         int lastRequested = -1;
         string status = "";
-        bool lastFailed;
-        List<string> monitors;
+        bool lastFailed, lastHdrFailed;
+        DetectResult monitors;
         string hdrSignature;
+        bool skipHdr;
 
         public TrayApp(bool launchedAtStartup)
         {
@@ -35,12 +36,13 @@ namespace BrightnessScheduler
             invoker = new Control();
             var forceHandle = invoker.Handle; // 他スレッドのイベントを UI スレッドへ戻すため
 
-            worker = new BrightnessWorker();
+            skipHdr = settings.SkipHdr;
+            worker = new BrightnessWorker { SkipHdr = skipHdr };
             worker.Applied += r => RunOnUi(delegate { OnApplied(r); });
-            worker.Detected += names => RunOnUi(delegate
+            worker.Detected += found => RunOnUi(delegate
             {
-                monitors = names;
-                if (form != null && !form.IsDisposed) form.SetMonitors(names);
+                monitors = found;
+                if (form != null && !form.IsDisposed) form.SetMonitors(found);
             });
 
             menu = new ContextMenuStrip();
@@ -181,7 +183,8 @@ namespace BrightnessScheduler
             if (r.Succeeded > 0)
             {
                 status = time + " に " + r.Succeeded + " 台の画面を " + r.Requested + "% にしました";
-                if (r.Failed > 0) status += "（" + r.Failed + " 台は変更できませんでした）";
+                if (r.HdrFailed > 0) status = "!" + status + "（HDR のモニターは変更できませんでした）";
+                else if (r.Failed > 0) status += "（" + r.Failed + " 台は変更できませんでした）";
                 lastFailed = false;
             }
             else
@@ -192,6 +195,12 @@ namespace BrightnessScheduler
                         "モニターの設定（OSD メニュー）で DDC/CI がオンになっているか確認してください。", ToolTipIcon.Warning);
                 lastFailed = true;
             }
+            // HDR の画面だけ失敗したとき（Windows の更新で仕組みが変わった場合など）は、続けて失敗している間は 1 回だけ知らせる
+            if (r.HdrFailed > 0 && r.Succeeded > 0 && !lastHdrFailed)
+                tray.ShowBalloonTip(5000, "HDR のモニターの明るさを変更できませんでした",
+                    "Windows の更新で仕組みが変わった可能性があります。設定画面で「HDR のモニターも変える」をオフにすると、HDR のモニターには何もしなくなります。",
+                    ToolTipIcon.Warning);
+            lastHdrFailed = r.HdrFailed > 0;
             if (form != null && !form.IsDisposed) form.RefreshStatus();
         }
 
@@ -229,6 +238,14 @@ namespace BrightnessScheduler
             {
                 TrySave();
                 autoItem.Checked = !settings.Paused;
+                if (settings.SkipHdr != skipHdr)
+                {
+                    // HDR のモニターを対象にした／外したときは、画面の一覧を読み直して設定し直す
+                    skipHdr = settings.SkipHdr;
+                    worker.SkipHdr = skipHdr;
+                    worker.RequestDetect();
+                    if (!settings.Paused) { Check(true); return; }
+                }
                 Check(false);
             };
             form.ApplyNowRequested += delegate { Check(true); };

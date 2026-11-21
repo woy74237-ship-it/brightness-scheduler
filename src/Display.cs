@@ -16,7 +16,14 @@ namespace BrightnessScheduler
         public int Requested;     // 設定しようとした明るさ（%）
         public int Succeeded;     // 設定できた画面の数
         public int Failed;        // 設定できなかった画面の数
+        public int HdrFailed;     // そのうち HDR の画面（SDR コンテンツの明るさを変えられなかった）
         public List<string> Names = new List<string>();
+    }
+
+    public class DetectResult
+    {
+        public List<string> Names = new List<string>();     // 明るさを変える画面
+        public List<string> Skipped = new List<string>();   // HDR がオンで対象外にしている画面
     }
 
     static class Display
@@ -174,19 +181,22 @@ namespace BrightnessScheduler
         }
 
         /// すべての画面の明るさを percent（0〜100）にする
-        public static ApplyResult SetAll(int percent)
+        /// skipHdr: HDR がオンの画面には何もしない
+        public static ApplyResult SetAll(int percent, bool skipHdr)
         {
             percent = Math.Max(0, Math.Min(100, percent));
             var res = new ApplyResult { Requested = percent };
 
             // HDR がオンの画面は、モニター本体の明るさが効かないので「SDR コンテンツの明るさ」を変える
+            // （対象外のときも、効かない DDC/CI は送らない）
             var hdr = Hdr.Query();
             var hdrSources = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var t in hdr)
             {
                 hdrSources.Add(t.Source);
+                if (skipHdr) continue;
                 if (Hdr.SetSdrBrightness(t, percent)) { res.Succeeded++; res.Names.Add(t.Name + "（HDR）"); }
-                else res.Failed++;
+                else { res.Failed++; res.HdrFailed++; }
             }
 
             ForEachPhysical(delegate(PHYSICAL_MONITOR m, string name, string device)
@@ -214,20 +224,25 @@ namespace BrightnessScheduler
         }
 
         /// 明るさを変えられる画面の名前（一覧表示用）
-        public static List<string> Detect()
+        public static DetectResult Detect(bool skipHdr)
         {
-            var names = new List<string>();
+            var res = new DetectResult();
             var hdrSources = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var t in Hdr.Query()) { hdrSources.Add(t.Source); names.Add(t.Name + "（HDR）"); }
+            foreach (var t in Hdr.Query())
+            {
+                hdrSources.Add(t.Source);
+                if (skipHdr) res.Skipped.Add(t.Name);
+                else res.Names.Add(t.Name + "（HDR）");
+            }
             ForEachPhysical(delegate(PHYSICAL_MONITOR m, string name, string device)
             {
                 if (hdrSources.Contains(device)) return;
                 uint cur, max;
                 if (Retry(delegate { return GetVCPFeatureAndVCPFeatureReply(m.Handle, VcpBrightness, IntPtr.Zero, out cur, out max); }))
-                    names.Add(name);
+                    res.Names.Add(name);
             });
-            if (WmiAvailable()) names.Add("内蔵ディスプレイ");
-            return names;
+            if (WmiAvailable()) res.Names.Add("内蔵ディスプレイ");
+            return res;
         }
 
         // ---- WMI（ノート PC の内蔵画面。デスクトップ PC では見つからないので何もしない） ----
@@ -280,7 +295,9 @@ namespace BrightnessScheduler
         /// 設定が終わったとき（ワーカースレッドから呼ばれる）
         public event Action<ApplyResult> Applied;
         /// 画面の検出が終わったとき（ワーカースレッドから呼ばれる）
-        public event Action<List<string>> Detected;
+        public event Action<DetectResult> Detected;
+        /// true: HDR がオンの画面は対象外（UI スレッドから設定し、ワーカーが読む）
+        public volatile bool SkipHdr;
 
         public BrightnessWorker()
         {
@@ -317,14 +334,14 @@ namespace BrightnessScheduler
                     if (value < 0 && !detect) break;
                     if (detect)
                     {
-                        List<string> names;
-                        try { names = Display.Detect(); } catch (Exception ex) { Debug.WriteLine(ex); names = new List<string>(); }
-                        var d = Detected; if (d != null) d(names);
+                        DetectResult found;
+                        try { found = Display.Detect(SkipHdr); } catch (Exception ex) { Debug.WriteLine(ex); found = new DetectResult(); }
+                        var d = Detected; if (d != null) d(found);
                     }
                     if (value >= 0)
                     {
                         ApplyResult r;
-                        try { r = Display.SetAll(value); }
+                        try { r = Display.SetAll(value, SkipHdr); }
                         catch (Exception ex) { Debug.WriteLine(ex); r = new ApplyResult { Requested = value, Failed = 1 }; }
                         var a = Applied; if (a != null) a(r);
                     }

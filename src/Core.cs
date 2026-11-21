@@ -91,6 +91,9 @@ namespace BrightnessScheduler
     {
         [DataMember(Order = 1)] public List<ScheduleEntry> Entries { get; set; }
         [DataMember(Order = 2)] public bool Paused { get; set; }
+        /// true: HDR がオンのモニターには何もしない（Windows の「SDR コンテンツの明るさ」を書き換えない）
+        /// 古い設定ファイルに無い項目は false になるので、「対象外にする」の向きで持つ
+        [DataMember(Order = 3)] public bool SkipHdr { get; set; }
 
         public static readonly string Dir = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "BrightnessScheduler");
