@@ -1,6 +1,7 @@
 // ディスプレイの明るさの読み書き
 //  ・外付けモニター: DDC/CI（dxva2.dll の VCP コード 0x10 = 輝度）
 //  ・ノート PC の内蔵画面: WMI（WmiMonitorBrightnessMethods）
+//  ・HDR がオンの画面: Windows の「SDR コンテンツの明るさ」（Hdr.cs）
 // DDC/CI は 1 回の通信に数十ミリ秒かかるため、専用のスレッドで処理する
 using System;
 using System.Collections.Generic;
@@ -74,8 +75,8 @@ namespace BrightnessScheduler
         const uint EDD_GET_DEVICE_INTERFACE_NAME = 1;
 
         /// 接続中の外付けモニターに対して処理する（終わったらハンドルを解放）
-        /// action の 2 つ目の引数は表示用の名前
-        static void ForEachPhysical(Action<PHYSICAL_MONITOR, string> action)
+        /// action の 2 つ目の引数は表示用の名前、3 つ目は \\.\DISPLAY1 などのデバイス名
+        static void ForEachPhysical(Action<PHYSICAL_MONITOR, string, string> action)
         {
             var handles = new List<IntPtr>();
             EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, delegate(IntPtr h, IntPtr dc, IntPtr r, IntPtr d) { handles.Add(h); return true; }, IntPtr.Zero);
@@ -86,6 +87,8 @@ namespace BrightnessScheduler
                 if (!GetNumberOfPhysicalMonitorsFromHMONITOR(h, out n) || n == 0) continue;
                 var arr = new PHYSICAL_MONITOR[n];
                 if (!GetPhysicalMonitorsFromHMONITOR(h, n, arr)) continue;
+                var mi = new MONITORINFOEX { Size = Marshal.SizeOf(typeof(MONITORINFOEX)) };
+                string device = GetMonitorInfo(h, ref mi) ? mi.Device : "";
                 try
                 {
                     foreach (var m in arr)
@@ -98,7 +101,7 @@ namespace BrightnessScheduler
                             name = n == 1 ? EdidNameFor(h, edidNames) : null;
                             if (name == null) name = "モニター";
                         }
-                        action(m, name);
+                        action(m, name, device);
                     }
                 }
                 finally { DestroyPhysicalMonitors(n, arr); }
@@ -176,8 +179,19 @@ namespace BrightnessScheduler
             percent = Math.Max(0, Math.Min(100, percent));
             var res = new ApplyResult { Requested = percent };
 
-            ForEachPhysical(delegate(PHYSICAL_MONITOR m, string name)
+            // HDR がオンの画面は、モニター本体の明るさが効かないので「SDR コンテンツの明るさ」を変える
+            var hdr = Hdr.Query();
+            var hdrSources = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var t in hdr)
             {
+                hdrSources.Add(t.Source);
+                if (Hdr.SetSdrBrightness(t, percent)) { res.Succeeded++; res.Names.Add(t.Name + "（HDR）"); }
+                else res.Failed++;
+            }
+
+            ForEachPhysical(delegate(PHYSICAL_MONITOR m, string name, string device)
+            {
+                if (hdrSources.Contains(device)) return;
                 uint cur = 0, max = 0;
                 bool read = Retry(delegate { return GetVCPFeatureAndVCPFeatureReply(m.Handle, VcpBrightness, IntPtr.Zero, out cur, out max); });
                 if (!read || max == 0) { res.Failed++; return; }  // DDC/CI 非対応（内蔵画面など）
@@ -203,8 +217,11 @@ namespace BrightnessScheduler
         public static List<string> Detect()
         {
             var names = new List<string>();
-            ForEachPhysical(delegate(PHYSICAL_MONITOR m, string name)
+            var hdrSources = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var t in Hdr.Query()) { hdrSources.Add(t.Source); names.Add(t.Name + "（HDR）"); }
+            ForEachPhysical(delegate(PHYSICAL_MONITOR m, string name, string device)
             {
+                if (hdrSources.Contains(device)) return;
                 uint cur, max;
                 if (Retry(delegate { return GetVCPFeatureAndVCPFeatureReply(m.Handle, VcpBrightness, IntPtr.Zero, out cur, out max); }))
                     names.Add(name);

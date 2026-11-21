@@ -23,6 +23,7 @@ namespace BrightnessScheduler
         string status = "";
         bool lastFailed;
         List<string> monitors;
+        string hdrSignature;
 
         public TrayApp(bool launchedAtStartup)
         {
@@ -148,6 +149,15 @@ namespace BrightnessScheduler
         /// force: 前回と同じ明るさでも設定し直す（モニターのボタンで変えられた場合などに戻すため）
         void Check(bool force)
         {
+            // HDR のオン／オフが変わったら、明るさの変え方も変わるので設定し直す
+            string sig = Hdr.Signature();
+            if (hdrSignature != null && sig != hdrSignature)
+            {
+                worker.RequestDetect();
+                if (!settings.Paused) force = true;
+            }
+            hdrSignature = sig;
+
             if (!settings.Paused || force)
             {
                 int target = Scheduler.TargetPercent(settings.Entries, DateTime.Now);
