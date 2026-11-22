@@ -1,6 +1,6 @@
 # 輝度スケジューラ
 
-指定した時刻にディスプレイの明るさを自動で変えるタスクトレイ常駐アプリです（[壁紙スケジューラ](https://github.com/woy74237-ship-it/wallpaper-scheduler) の明るさ版）。
+ディスプレイの輝度（明るさ）を時間指定で自動調整する、Windows 用のタスクトレイ常駐アプリです（[壁紙スケジューラ](https://github.com/woy74237-ship-it/wallpaper-scheduler) の明るさ版）。
 
 🌐 紹介ページ: **https://woy74237-ship-it.github.io/brightness-scheduler/**
 
