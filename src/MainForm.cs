@@ -15,7 +15,10 @@ namespace BrightnessScheduler
         public bool Paused, Fading;
         public string Status = "";        // 画面への反映状況
         public bool StatusIsError;
-        public readonly FlatButton ApplyButton;
+        /// 一時的に暗くしている間は終わる時刻（「元に戻すまで」は DateTime.MaxValue）、暗くしていなければ null
+        public DateTime? DimUntil;
+        public int DimFactor = 50;
+        public readonly FlatButton ApplyButton, DimButton;
         public readonly ToggleSwitch AutoToggle;
         public readonly BrightnessChart Chart;
 
@@ -23,12 +26,18 @@ namespace BrightnessScheduler
         {
             BackColor = Theme.Surface;
             ApplyButton = new FlatButton { Text = "今すぐ適用", Glyph = Glyphs.Refresh, Kind = ButtonKind.Standard };
+            DimButton = new FlatButton { Text = "一時的に暗くする", Glyph = Glyphs.Brightness, Kind = ButtonKind.Standard };
             AutoToggle = new ToggleSwitch { Text = "明るさの自動変更", ShowState = true };
             Chart = new BrightnessChart();
-            Controls.AddRange(new Control[] { ApplyButton, AutoToggle, Chart });
+            Controls.AddRange(new Control[] { ApplyButton, DimButton, AutoToggle, Chart });
         }
 
+        bool Dimming { get { return DimUntil.HasValue; } }
+
         Rectangle IconRect { get { return new Rectangle(Theme.S(20), Theme.S(20), Theme.S(84), Theme.S(84)); } }
+
+        /// 右側のボタン 2 つ（今すぐ適用・一時的に暗くする）の左端
+        int ButtonsLeft { get { return Math.Min(ApplyButton.Left, DimButton.Left); } }
 
         protected override void OnLayout(LayoutEventArgs e)
         {
@@ -36,8 +45,11 @@ namespace BrightnessScheduler
             int h = Theme.S(34);
             AutoToggle.FitWidth();
             AutoToggle.SetBounds(Width - Theme.S(20) - AutoToggle.Width, Theme.S(18), AutoToggle.Width, h);
-            ApplyButton.SetBounds(Width - Theme.S(20) - ApplyButton.PreferredWidth(), Theme.S(70), ApplyButton.PreferredWidth(), h);
-            int cy = IconRect.Bottom + Theme.S(28);
+            // 2 つのボタンは幅をそろえて右側に縦に並べる
+            int bw = Math.Max(ApplyButton.PreferredWidth(), DimButton.PreferredWidth());
+            ApplyButton.SetBounds(Width - Theme.S(20) - bw, Theme.S(60), bw, h);
+            DimButton.SetBounds(Width - Theme.S(20) - bw, Theme.S(100), bw, h);
+            int cy = Theme.S(148);
             Chart.SetBounds(Theme.S(12), cy, Width - Theme.S(32), Height - cy - Theme.S(12));
         }
 
@@ -49,32 +61,39 @@ namespace BrightnessScheduler
             Theme.DrawRound(g, Theme.Border, r, Theme.S(8), 1f);
 
             var ir = IconRect;
+            int dimmed = Scheduler.Dimmed(Target, DimFactor);
             Theme.FillRound(g, Theme.Track, ir, Theme.S(10));
             SunIcon.Draw(g, new RectangleF(ir.X + Theme.S(14), ir.Y + Theme.S(14), ir.Width - Theme.S(28), ir.Height - Theme.S(28)),
-                Math.Max(0, Target), Target < 0 || Paused ? Theme.FgDim : Theme.Accent);
+                Dimming ? dimmed : Math.Max(0, Target), Dimming ? Theme.Accent : Target < 0 || Paused ? Theme.FgDim : Theme.Accent);
 
             // 停止中は画面の実際の明るさとは限らないので「スケジュール上の明るさ」と書く
             int tx = ir.Right + Theme.S(20), tw = AutoToggle.Left - tx - Theme.S(12);
-            Theme.DrawText(g, Paused ? "スケジュール上の明るさ  ·  停止中" : "現在の明るさ", Theme.Small, Theme.FgDim,
-                new Rectangle(tx, Theme.S(16), tw, Theme.S(20)), Theme.Left);
+            string label = Dimming ? "一時的に暗くしています  ·  " + (DimUntil.Value == DateTime.MaxValue ? "元に戻すまで" : DimUntil.Value.ToString("H:mm") + " まで")
+                         : Paused ? "スケジュール上の明るさ  ·  停止中" : "現在の明るさ";
+            Theme.DrawText(g, label, Theme.Small, Dimming ? Theme.Fg : Theme.FgDim, new Rectangle(tx, Theme.S(16), tw, Theme.S(20)), Theme.Left);
 
-            string big = Target < 0 ? "スケジュールがありません" : Target + "%";
-            var font = Target < 0 ? Theme.Title : Theme.TimeBig;
-            Theme.DrawText(g, big, font, Paused && Target >= 0 ? Theme.FgDim : Theme.Fg, new Rectangle(tx, Theme.S(36), tw, Theme.S(46)), Theme.Left);
+            string big = Dimming ? dimmed + "%" : Target < 0 ? "スケジュールがありません" : Target + "%";
+            var font = !Dimming && Target < 0 ? Theme.Title : Theme.TimeBig;
+            Theme.DrawText(g, big, font, !Dimming && Paused && Target >= 0 ? Theme.FgDim : Theme.Fg, new Rectangle(tx, Theme.S(36), tw, Theme.S(46)), Theme.Left);
 
             string sub;
             var now = DateTime.Now;
-            if (Target < 0) sub = "「追加」から時刻と明るさを登録してください";
+            if (Dimming)
+            {
+                string factor = DimFactor == 50 ? "半分" : DimFactor == 75 ? "3/4" : DimFactor == 25 ? "1/4" : DimFactor + "%";
+                sub = (Target < 0 ? "100%" : "スケジュールの明るさ " + Target + "%") + " の" + factor + "にしています";
+            }
+            else if (Target < 0) sub = "「追加」から時刻と明るさを登録してください";
             // 停止中は明るさを変えないので、「変化中」「次は〜」は出さない
             else if (Paused) sub = "停止中のため、明るさは変えません";
             else if (Next == null) sub = "毎日この明るさにします";
             else if (Fading) sub = Next.Time + " に " + Next.Brightness + "% へ向けて変化中（あと " + Scheduler.Remaining(Next.TimeOfDay, now) + "）";
             else sub = "次は " + Next.Time + " に " + Next.Brightness + "%（あと " + Scheduler.Remaining(Next.TimeOfDay, now) + "）";
-            int subW = ApplyButton.Left - tx - Theme.S(12);
+            int subW = ButtonsLeft - tx - Theme.S(12);
             Theme.DrawText(g, sub, Theme.Body, Theme.FgDim, new Rectangle(tx, Theme.S(82), subW, Theme.S(22)), Theme.Left);
             if (!string.IsNullOrEmpty(Status))
                 Theme.DrawText(g, Status, Theme.Small, StatusIsError ? Theme.Danger : Theme.FgDim,
-                    new Rectangle(tx, Theme.S(104), Width - tx - Theme.S(20), Theme.S(18)), Theme.Left);
+                    new Rectangle(tx, Theme.S(106), subW, Theme.S(18)), Theme.Left);
         }
     }
 
@@ -97,6 +116,8 @@ namespace BrightnessScheduler
         bool updating, updatingStartup, showStartupWarning;
 
         public event EventHandler SettingsChanged, ApplyNowRequested, CorrectionsRequested;
+        /// 「一時的に暗くする」のボタンが押されたとき（sender はボタン。メニューをボタンの下に出すため）
+        public event EventHandler DimMenuRequested;
 
         /// statusProvider: 画面への反映状況の文字列（先頭が "!" ならエラー）
         public MainForm(Settings settings, Icon icon, Func<string> statusProvider, Action<int> preview)
@@ -119,6 +140,8 @@ namespace BrightnessScheduler
 
             header = new HeaderPanel();
             header.ApplyButton.Click += delegate { if (ApplyNowRequested != null) ApplyNowRequested(this, EventArgs.Empty); };
+            header.DimButton.Click += delegate { if (DimMenuRequested != null) DimMenuRequested(header.DimButton, EventArgs.Empty); };
+            tips.SetToolTip(header.DimButton, "スケジュールに関係なく、しばらくのあいだ画面を暗くします（30 分・1 時間・2 時間・元に戻すまで）");
             tips.SetToolTip(header.ApplyButton, "モニターのボタンなどで明るさを変えたときに、スケジュールの明るさへ戻します");
             header.AutoToggle.CheckedChanged += delegate
             {
@@ -223,7 +246,7 @@ namespace BrightnessScheduler
         {
             if (header == null || startupWarning == null || hdrToggle == null || correctionButton == null) return;
             int pad = Theme.S(24), w = ClientSize.Width - pad * 2, btnH = Theme.S(34);
-            header.SetBounds(pad, pad, w, Theme.S(270));
+            header.SetBounds(pad, pad, w, Theme.S(286));
 
             int y = header.Bottom + Theme.S(28);
             addButton.SetBounds(pad + w - addButton.PreferredWidth(), y, addButton.PreferredWidth(), btnH);
@@ -319,6 +342,16 @@ namespace BrightnessScheduler
             FitCards();
             countLabel.Text = settings.Entries.Count > 0 ? settings.Entries.Count + " 件" : "";
             cardPanel.Invalidate();
+            RefreshStatus();
+        }
+
+        /// 一時的に暗くしている状態を表示に反映する（until が null なら暗くしていない）
+        public void SetDim(DateTime? until, int factor)
+        {
+            header.DimUntil = until;
+            header.DimFactor = factor;
+            header.DimButton.Text = until.HasValue ? "元の明るさに戻す" : "一時的に暗くする";
+            header.PerformLayout();
             RefreshStatus();
         }
 

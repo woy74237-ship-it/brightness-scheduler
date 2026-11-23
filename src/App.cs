@@ -25,6 +25,9 @@ namespace BrightnessScheduler
         DetectResult monitors;
         string hdrSignature;
         bool skipHdr;
+        /// 一時的に暗くしている間は、終わる時刻（「元に戻すまで」のときは DateTime.MaxValue）。暗くしていなければ null
+        DateTime? dimUntil;
+        readonly ToolStripMenuItem dimItem;
 
         public TrayApp(bool launchedAtStartup)
         {
@@ -54,6 +57,13 @@ namespace BrightnessScheduler
             autoItem = Theme.MenuItem("明るさの自動変更", delegate { TogglePause(); });
             autoItem.Checked = !settings.Paused;
             menu.Items.Add(autoItem);
+            // 一時的に暗くする（開くたびに、今の状態に合わせて中身を作り直す）
+            dimItem = Theme.MenuItem("一時的に暗くする", null);
+            dimItem.DropDown = new ContextMenuStrip();
+            Theme.StyleMenu((ContextMenuStrip)dimItem.DropDown);
+            dimItem.DropDownOpening += delegate { FillDimMenu(dimItem.DropDownItems); };
+            FillDimMenu(dimItem.DropDownItems);
+            menu.Items.Add(dimItem);
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add(Theme.MenuItem("このアプリについて", delegate { ShowAbout(); }));
             if (AppInfo.HasSupport)
@@ -160,9 +170,21 @@ namespace BrightnessScheduler
             }
             hdrSignature = sig;
 
-            if (!settings.Paused || force)
+            // 一時的に暗くする時間が終わったら、スケジュールの明るさに戻す
+            if (dimUntil.HasValue && DateTime.Now >= dimUntil.Value)
+            {
+                dimUntil = null;
+                force = true;
+                tray.ShowBalloonTip(4000, "元の明るさに戻しました", "一時的に暗くする時間が終わりました。", ToolTipIcon.Info);
+                if (form != null && !form.IsDisposed) form.SetDim(null, settings.DimFactor);
+            }
+
+            // 暗くしている間は、明るさの自動変更が停止中でも暗くした明るさにする（自分で暗くしたため）
+            bool dimming = dimUntil.HasValue;
+            if (!settings.Paused || force || dimming)
             {
                 int target = Scheduler.TargetPercent(settings.Entries, DateTime.Now);
+                if (dimming) target = Scheduler.Dimmed(target, settings.DimFactor);
                 if (target >= 0 && (force || target != lastRequested))
                 {
                     lastRequested = target;
@@ -170,6 +192,77 @@ namespace BrightnessScheduler
                 }
             }
             UpdateTooltip();
+        }
+
+        // ---- 一時的に暗くする ----
+        static readonly int[] DimMinutes = { 30, 60, 120 };
+        static readonly string[] DimLabels = { "30 分", "1 時間", "2 時間" };
+
+        /// 暗くし始める（minutes が 0 以下なら「元に戻すまで」）
+        void StartDim(int minutes)
+        {
+            dimUntil = minutes > 0 ? DateTime.Now.AddMinutes(minutes) : DateTime.MaxValue;
+            if (form != null && !form.IsDisposed) form.SetDim(dimUntil, settings.DimFactor);
+            Check(true);
+        }
+
+        void StopDim()
+        {
+            dimUntil = null;
+            if (form != null && !form.IsDisposed) form.SetDim(null, settings.DimFactor);
+            Check(true);
+        }
+
+        void SetDimFactor(int factor)
+        {
+            settings.DimFactor = factor;
+            TrySave();
+            if (form != null && !form.IsDisposed) form.SetDim(dimUntil, settings.DimFactor);
+            if (dimUntil.HasValue) Check(true);
+        }
+
+        /// 「一時的に暗くする」のメニューの中身（トレイのメニューと、設定画面のボタンで共通）
+        void FillDimMenu(ToolStripItemCollection items)
+        {
+            items.Clear();
+            if (dimUntil.HasValue)
+            {
+                var stop = Theme.MenuItem("元の明るさに戻す", delegate { StopDim(); });
+                stop.Font = Theme.BodySemi;
+                items.Add(stop);
+                items.Add(new ToolStripSeparator());
+            }
+            for (int i = 0; i < DimMinutes.Length; i++)
+            {
+                int m = DimMinutes[i];
+                items.Add(Theme.MenuItem(DimLabels[i] + (dimUntil.HasValue ? "（今から）" : ""), delegate { StartDim(m); }));
+            }
+            var forever = Theme.MenuItem("元に戻すまで", delegate { StartDim(0); });
+            forever.Checked = dimUntil == DateTime.MaxValue;
+            items.Add(forever);
+            items.Add(new ToolStripSeparator());
+            for (int i = 0; i < Settings.DimFactors.Length; i++)
+            {
+                int f = Settings.DimFactors[i];
+                var item = Theme.MenuItem(Settings.DimFactorLabels[i], delegate { SetDimFactor(f); });
+                item.Checked = settings.DimFactor == f;
+                items.Add(item);
+            }
+        }
+
+        /// 設定画面のボタンから「一時的に暗くする」のメニューを開く
+        void ShowDimMenu(Control anchor)
+        {
+            var m = new ContextMenuStrip();
+            Theme.StyleMenu(m);
+            FillDimMenu(m.Items);
+            m.Closed += delegate { invoker.BeginInvoke((MethodInvoker)delegate { m.Dispose(); }); };
+            m.Show(anchor, new Point(0, anchor.Height + Theme.S(4)));
+        }
+
+        static string DimUntilText(DateTime until)
+        {
+            return until == DateTime.MaxValue ? "元に戻すまで" : until.ToString("H:mm") + " まで";
         }
 
         void Preview(int percent)
@@ -209,7 +302,9 @@ namespace BrightnessScheduler
             string text = AppInfo.Name;
             var now = DateTime.Now;
             int target = Scheduler.TargetPercent(settings.Entries, now);
-            if (settings.Paused) text += "\n明るさの自動変更は停止中";
+            if (dimUntil.HasValue)
+                text += "\n一時的に暗くしています（" + DimUntilText(dimUntil.Value) + "）";
+            else if (settings.Paused) text += "\n明るさの自動変更は停止中";
             else if (target < 0) text += "\nスケジュール未設定";
             else
             {
@@ -234,6 +329,13 @@ namespace BrightnessScheduler
             }
             form = new MainForm(settings, appIcon, () => status, Preview);
             if (monitors != null) form.SetMonitors(monitors);
+            form.SetDim(dimUntil, settings.DimFactor);
+            form.DimMenuRequested += delegate(object s, EventArgs e)
+            {
+                // 暗くしている間はボタンが「元の明るさに戻す」になっているので、そのまま戻す
+                if (dimUntil.HasValue) StopDim();
+                else ShowDimMenu((Control)s);
+            };
             form.SettingsChanged += delegate
             {
                 TrySave();

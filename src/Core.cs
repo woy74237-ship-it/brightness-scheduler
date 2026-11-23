@@ -146,6 +146,11 @@ namespace BrightnessScheduler
         [DataMember(Order = 3)] public bool SkipHdr { get; set; }
         /// モニターごとの補正（つながっていないモニターの補正も残しておく）
         [DataMember(Order = 4)] public List<MonitorCorrection> Corrections { get; set; }
+        /// 一時的に暗くするときの割合（%）。今の明るさにこの割合を掛ける（75 / 50 / 25）
+        [DataMember(Order = 5)] public int DimFactor { get; set; }
+
+        public static readonly int[] DimFactors = { 75, 50, 25 };
+        public static readonly string[] DimFactorLabels = { "少し暗く（3/4）", "半分に", "かなり暗く（1/4）" };
 
         public static readonly string Dir = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "BrightnessScheduler");
@@ -174,6 +179,7 @@ namespace BrightnessScheduler
             s.Entries.RemoveAll(e => e == null || !e.IsValid);
             if (s.Corrections == null) s.Corrections = new List<MonitorCorrection>();
             s.Corrections.RemoveAll(c => c == null || string.IsNullOrEmpty(c.Id));
+            if (Array.IndexOf(DimFactors, s.DimFactor) < 0) s.DimFactor = 50;  // 古い設定ファイルには無いので既定の「半分」に
             return s;
         }
 
@@ -250,6 +256,13 @@ namespace BrightnessScheduler
         {
             double v = TargetAt(entries, now.TimeOfDay);
             return v < 0 ? -1 : (int)Math.Round(v);
+        }
+
+        /// 一時的に暗くしたときの明るさ。スケジュールが空（target が -1）なら 100% を基準にする
+        public static int Dimmed(int target, int factor)
+        {
+            int baseValue = target < 0 ? 100 : target;
+            return Math.Max(0, Math.Min(100, (int)Math.Round(baseValue * factor / 100.0)));
         }
 
         /// 「3時間12分」のような残り時間表記
