@@ -88,6 +88,13 @@ static class Screenshots
         main.SetMonitors(Monitors());
         Shoot(main, "main.png", null);
 
+        // 1-2. 一時的に暗くしている状態（1 時間・半分）
+        var dimForm = new MainForm(settings, Theme.LoadAppIcon(Size.Empty),
+            () => DateTime.Now.ToString("H:mm") + " に 2 台の画面を " + Scheduler.Dimmed(now, 50) + "% にしました", v => { });
+        dimForm.SetMonitors(Monitors());
+        dimForm.SetDim(DateTime.Now.AddHours(1), 50);
+        Shoot(dimForm, "dim.png", null);
+
         // 2. 明るさの編集（夜にかけてなめらかに暗くする）
         Shoot(new EntryDialog(Sample()[2], false, v => { }), "edit.png", null);
 

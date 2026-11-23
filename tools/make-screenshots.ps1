@@ -1,5 +1,5 @@
 # 紹介ページ・記事用のスクリーンショットを docs\images\ に撮る（docs\images\ は手元だけの素材）
-#   main.png / edit.png / correction.png
+#   main.png / dim.png（一時的に暗くしている状態）/ edit.png / correction.png
 # サンプルのスケジュールと架空のモニター名（メインモニター・サブモニター）で撮影し、モニターの明るさは変えません。
 # 配色は Windows のダーク／ライトモードとアクセントカラーに従います。
 $ErrorActionPreference = 'Stop'
