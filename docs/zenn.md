@@ -29,6 +29,7 @@ published: false
 - 外付けモニター（DDC/CI）とノート PC の内蔵画面に対応
 - **HDR がオンのモニター**は Windows の「SDR コンテンツの明るさ」を変える
 - 2 台のモニターで見え方が違うときの**モニターごとの補正**
+- 明るさ 0% でもまぶしいときの**画面フィルター**（v1.2.0 で追加）
 
 ## ダウンロード
 
@@ -170,6 +171,45 @@ return prev.Brightness + (next.Brightness - prev.Brightness) * f;
 「範囲で指定」は数字だけだと使い方が伝わりにくかったので、ガイドを付けました。確認用の明るさを自動で 0% → 100% に切り替えながら、合わせる行を枠で示して、実際の画面を見比べてもらいます。
 
 ![モニターごとの補正のガイド](images/correction.png)
+
+## 【追記】0% より暗くする画面フィルター（v1.2.0）
+
+HDR がオンのモニターは、SDR コンテンツの明るさを一番下げても 80 nits までしか暗くなりません。「0% にしてもまだまぶしい」という自分の悩みから、**画面全体に半透明の黒い窓を重ねる**フィルターを付けました。
+
+ガンマ（`SetDeviceGammaRamp`）で暗くする方法もありますが、HDR 中は効かず、夜間モードなどとも取り合いになります。窓を重ねる方法なら HDR の画面にもそのまま効きます。
+
+フィルターの窓は、`Screen.AllScreens` の画面ごとに、枠なし・最前面の `Form` を 1 枚ずつ作っているだけです。ポイントは拡張スタイルです。
+
+```csharp
+protected override CreateParams CreateParams
+{
+    get
+    {
+        var cp = base.CreateParams;
+        cp.ExStyle |= 0x80000      // WS_EX_LAYERED     : Opacity で半透明に
+                    | 0x20         // WS_EX_TRANSPARENT : クリックを下の窓に素通りさせる
+                    | 0x80         // WS_EX_TOOLWINDOW  : Alt+Tab に出さない
+                    | 0x8000000    // WS_EX_NOACTIVATE  : フォーカスを奪わない
+                    | 0x8;         // WS_EX_TOPMOST
+        return cp;
+    }
+}
+protected override bool ShowWithoutActivation { get { return true; } }
+```
+
+さらに、**スクリーンショットや画面共有に写らない**よう、`SetWindowDisplayAffinity` で `WDA_EXCLUDEFROMCAPTURE`（`0x11`、Windows 10 2004 以降）を指定しています。オンライン会議で画面共有をしても、相手には暗い画面が届きません。
+
+```csharp
+SetWindowDisplayAffinity(Handle, 0x11 /* WDA_EXCLUDEFROMCAPTURE */);
+```
+
+ほかの「常に手前に表示」の窓に隠されないよう、15 秒ごとの確認のついでに `SetWindowPos(HWND_TOPMOST, …, SWP_NOACTIVATE)` で前に出し直し、モニターの抜き差しや解像度の変更（`SystemEvents.DisplaySettingsChanged`）があったら窓を作り直しています。
+
+濃さはスライダーで 10〜90% から選べるようにし、動かしている間は窓を作り直さずに `Opacity` だけを変えて、ちらつかないようにしました。上限を 90% にしているのは、真っ黒になって操作できなくなるのを避けるためです。
+
+:::message
+マウスカーソルや、スタートメニュー・通知などの一部、全画面のゲームなどは、このフィルターでは暗くなりません。
+:::
 
 ## おわりに
 

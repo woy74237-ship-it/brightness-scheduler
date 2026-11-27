@@ -95,6 +95,16 @@ static class Screenshots
         dimForm.SetDim(DateTime.Now.AddHours(1), 50);
         Shoot(dimForm, "dim.png", null);
 
+        // 1-3. 「0% ＋フィルター」で暗くしている状態（フィルター自体はスクリーンショットに写らないので、表示だけ）
+        var filterForm = new MainForm(settings, Theme.LoadAppIcon(Size.Empty),
+            () => DateTime.Now.ToString("H:mm") + " に 2 台の画面を 0% にしました", v => { });
+        filterForm.SetMonitors(Monitors());
+        filterForm.SetDim(DateTime.Now.AddMinutes(30), Settings.FilterMode, 40);
+        Shoot(filterForm, "filter.png", null);
+
+        // 1-4. フィルターの濃さを調整する画面
+        Shoot(new FilterDialog(40, v => { }), "filter-dialog.png", null);
+
         // 2. 明るさの編集（夜にかけてなめらかに暗くする）
         Shoot(new EntryDialog(Sample()[2], false, v => { }), "edit.png", null);
 
