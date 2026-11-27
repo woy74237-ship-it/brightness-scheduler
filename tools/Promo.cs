@@ -18,7 +18,8 @@ partial class MakeIcon
             using (var g = Graphics.FromImage(bmp))
             {
                 DrawDimmingSky(g, w, h);
-                if (args[0] == "--ogp") DrawOgpCard(g, w, h);
+                // 5 つ目・6 つ目の引数で、見出しとキャッチコピーを変えられる（記事ごとの見出し画像用）
+                if (args[0] == "--ogp") DrawOgpCard(g, w, h, args.Length > 4 ? args[4] : "輝度スケジューラ", args.Length > 5 ? args[5] : "時刻で、画面の明るさが自動で変わる。");
             }
             bmp.Save(args[1], ImageFormat.Png);
         }
@@ -99,7 +100,7 @@ partial class MakeIcon
 
     static double Smooth(double f) { f = Math.Max(0, Math.Min(1, f)); return f * f * (3 - 2 * f); }
 
-    static void DrawOgpCard(Graphics g, int w, int h)
+    static void DrawOgpCard(Graphics g, int w, int h, string titleText, string catchText)
     {
         g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAlias;
         float k = h / 630f;  // 1200x630 を基準に拡大縮小
@@ -128,9 +129,9 @@ partial class MakeIcon
         using (var chipFg = new SolidBrush(C(0x2E, 0x2C, 0x7A)))
         {
             float y = card.Y + (card.Height - 268 * k) / 2f;
-            g.DrawString("輝度スケジューラ", title, ink, x, y, fmt);
+            g.DrawString(titleText, title, ink, x, y, fmt);
             y += 90 * k;
-            g.DrawString("時刻で、画面の明るさが自動で変わる。", body, sub, x, y, fmt);
+            g.DrawString(catchText, body, sub, x, y, fmt);
             y += 70 * k;
             float cx = x;
             foreach (var label in new[] { "Windows 10 / 11", "無料", "インストール不要" })

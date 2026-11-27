@@ -6,6 +6,7 @@
 
 📝 紹介記事
 - 使い方の紹介（note）: [夜になると画面がまぶしい…を解決！明るさが時刻で自動で変わる無料の Windows アプリ「輝度スケジューラ」を作りました](https://note.com/quiet_raven5890/n/nb5c7d3046c02)
+- 画面フィルターの紹介（note）: [モニターの明るさを 0% にしても、まだまぶしい…を解決！画面を「0% よりさらに暗く」する無料アプリ](https://note.com/quiet_raven5890/n/ncb5c32f00fb4)
 - 作り方の解説（Zenn）: [モニターの明るさを時刻で変える Windows アプリを作った（DDC/CI と HDR の SDR 明るさ）](https://zenn.dev/walt_owen/articles/4b5cab6cb4d673)
 
 ## ダウンロード
