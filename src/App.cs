@@ -28,6 +28,8 @@ namespace BrightnessScheduler
         /// 一時的に暗くしている間は、終わる時刻（「元に戻すまで」のときは DateTime.MaxValue）。暗くしていなければ null
         DateTime? dimUntil;
         readonly ToolStripMenuItem dimItem;
+        /// 明るさ 0% でもまぶしいとき用の、画面を暗くするフィルター
+        readonly ScreenFilter filter = new ScreenFilter();
 
         public TrayApp(bool launchedAtStartup)
         {
@@ -113,7 +115,15 @@ namespace BrightnessScheduler
             if (e.Reason == SessionSwitchReason.SessionUnlock) RunOnUi(ReapplyLater);
         }
 
-        void OnDisplaySettingsChanged(object sender, EventArgs e) { RunOnUi(ReapplyLater); }
+        void OnDisplaySettingsChanged(object sender, EventArgs e)
+        {
+            RunOnUi(delegate
+            {
+                // モニターの数や解像度が変わったら、フィルターの窓も画面に合わせて作り直す
+                if (filter.Visible) filter.Rebuild();
+                ReapplyLater();
+            });
+        }
 
         void OnUserPreferenceChanged(object sender, UserPreferenceChangedEventArgs e)
         {
@@ -176,7 +186,7 @@ namespace BrightnessScheduler
                 dimUntil = null;
                 force = true;
                 tray.ShowBalloonTip(4000, "元の明るさに戻しました", "一時的に暗くする時間が終わりました。", ToolTipIcon.Info);
-                if (form != null && !form.IsDisposed) form.SetDim(null, settings.DimFactor);
+                if (form != null && !form.IsDisposed) form.SetDim(null, settings.DimFactor, settings.FilterLevel);
             }
 
             // 暗くしている間は、明るさの自動変更が停止中でも暗くした明るさにする（自分で暗くしたため）
@@ -191,56 +201,94 @@ namespace BrightnessScheduler
                     worker.Request(target);
                 }
             }
+
+            // 「0% ＋フィルター」で暗くしている間は、画面に黒いフィルターを重ねる（15 秒ごとに最前面へ出し直す）
+            int filterStrength = dimming ? settings.ActiveFilterLevel : 0;
+            if (filterStrength > 0) filter.Show(filterStrength);
+            else if (filter.Visible) filter.Hide();
             UpdateTooltip();
         }
 
         // ---- 一時的に暗くする ----
-        static readonly int[] DimMinutes = { 30, 60, 120 };
-        static readonly string[] DimLabels = { "30 分", "1 時間", "2 時間" };
+        static readonly int[] DimMinuteChoices = { 30, 60, 120, Settings.DimUntilRestore };
+        static readonly string[] DimMinuteLabels = { "30 分", "1 時間", "2 時間", "元に戻すまで" };
 
-        /// 暗くし始める（minutes が 0 以下なら「元に戻すまで」）
+        static string DimMinutesText(int minutes)
+        {
+            int i = Array.IndexOf(DimMinuteChoices, minutes);
+            return i >= 0 ? DimMinuteLabels[i] : minutes + " 分";
+        }
+
+        /// メニューの見出しに出す、今の暗さの短い説明
+        string DimFactorText(int factor)
+        {
+            if (factor == Settings.FilterMode) return "0% ＋フィルター " + settings.FilterLevel + "%";
+            int i = Array.IndexOf(Settings.DimFactors, factor);
+            return i >= 0 ? Settings.DimFactorLabels[i] : factor + "%";
+        }
+
+        /// 暗くし始める（minutes が Settings.DimUntilRestore なら「元に戻すまで」）。選んだ時間は次回のために覚えておく
         void StartDim(int minutes)
         {
             dimUntil = minutes > 0 ? DateTime.Now.AddMinutes(minutes) : DateTime.MaxValue;
-            if (form != null && !form.IsDisposed) form.SetDim(dimUntil, settings.DimFactor);
+            if (settings.DimMinutes != minutes) { settings.DimMinutes = minutes; TrySave(); }
+            if (form != null && !form.IsDisposed) form.SetDim(dimUntil, settings.DimFactor, settings.FilterLevel);
             Check(true);
         }
 
         void StopDim()
         {
             dimUntil = null;
-            if (form != null && !form.IsDisposed) form.SetDim(null, settings.DimFactor);
+            if (form != null && !form.IsDisposed) form.SetDim(null, settings.DimFactor, settings.FilterLevel);
             Check(true);
         }
 
+        /// 暗さを選ぶ。暗くしていなければ、前回の時間ですぐ暗くし始める（暗さだけ選んで何も起きない、とならないように）
         void SetDimFactor(int factor)
         {
-            settings.DimFactor = factor;
-            TrySave();
-            if (form != null && !form.IsDisposed) form.SetDim(dimUntil, settings.DimFactor);
-            if (dimUntil.HasValue) Check(true);
+            if (settings.DimFactor != factor) { settings.DimFactor = factor; TrySave(); }
+            if (!dimUntil.HasValue) { StartDim(settings.LastDimMinutes); return; }
+            if (form != null && !form.IsDisposed) form.SetDim(dimUntil, settings.DimFactor, settings.FilterLevel);
+            Check(true);
+        }
+
+        /// メニューの見出し（押せない灰色の行）
+        static ToolStripMenuItem MenuHeader(string text)
+        {
+            var h = Theme.MenuItem(text, null);
+            h.Enabled = false;
+            h.Font = Theme.Small;
+            return h;
         }
 
         /// 「一時的に暗くする」のメニューの中身（トレイのメニューと、設定画面のボタンで共通）
+        /// 時間と暗さのどちらを選んでも、すぐ暗くなる（もう一方は今の設定・前回の選択を使う）
         void FillDimMenu(ToolStripItemCollection items)
         {
             items.Clear();
-            if (dimUntil.HasValue)
+            bool dimming = dimUntil.HasValue;
+            if (dimming)
             {
                 var stop = Theme.MenuItem("元の明るさに戻す", delegate { StopDim(); });
                 stop.Font = Theme.BodySemi;
                 items.Add(stop);
                 items.Add(new ToolStripSeparator());
             }
-            for (int i = 0; i < DimMinutes.Length; i++)
+
+            // 時間
+            items.Add(MenuHeader(dimming ? "時間を選び直す（今から）" : "時間を選んで暗くする（暗さ：" + DimFactorText(settings.DimFactor) + "）"));
+            int lastMinutes = settings.LastDimMinutes;
+            for (int i = 0; i < DimMinuteChoices.Length; i++)
             {
-                int m = DimMinutes[i];
-                items.Add(Theme.MenuItem(DimLabels[i] + (dimUntil.HasValue ? "（今から）" : ""), delegate { StartDim(m); }));
+                int m = DimMinuteChoices[i];
+                var item = Theme.MenuItem(DimMinuteLabels[i], delegate { StartDim(m); });
+                item.Checked = m == lastMinutes;
+                items.Add(item);
             }
-            var forever = Theme.MenuItem("元に戻すまで", delegate { StartDim(0); });
-            forever.Checked = dimUntil == DateTime.MaxValue;
-            items.Add(forever);
             items.Add(new ToolStripSeparator());
+
+            // 暗さ
+            items.Add(MenuHeader(dimming ? "暗さを変える" : "暗さを選んで暗くする（時間：" + DimMinutesText(lastMinutes) + "）"));
             for (int i = 0; i < Settings.DimFactors.Length; i++)
             {
                 int f = Settings.DimFactors[i];
@@ -248,6 +296,38 @@ namespace BrightnessScheduler
                 item.Checked = settings.DimFactor == f;
                 items.Add(item);
             }
+            items.Add(Theme.MenuItem("フィルターの濃さを調整…（今は " + settings.FilterLevel + "%）", delegate { ShowFilterDialog(); }));
+        }
+
+        bool filterDialogOpen;
+
+        /// フィルターの濃さを、実際の画面を見ながら調整する
+        void ShowFilterDialog()
+        {
+            if (filterDialogOpen) return;
+            filterDialogOpen = true;
+            int before = settings.FilterLevel;
+            try
+            {
+                using (var dlg = new FilterDialog(settings.FilterLevel, level =>
+                {
+                    // 調整している間は、暗くしていなくてもフィルターを見せる
+                    settings.FilterLevel = level;
+                    filter.Show(level);
+                    if (form != null && !form.IsDisposed) form.SetDim(dimUntil, settings.DimFactor, settings.FilterLevel);
+                }))
+                {
+                    var owner = form != null && !form.IsDisposed && form.Visible ? form : null;
+                    if (owner == null) dlg.StartPosition = FormStartPosition.CenterScreen;
+                    dlg.ShowDialog(owner);
+                    settings.FilterLevel = dlg.Level;
+                }
+            }
+            finally { filterDialogOpen = false; }
+            if (settings.FilterLevel != before) TrySave();
+            if (form != null && !form.IsDisposed) form.SetDim(dimUntil, settings.DimFactor, settings.FilterLevel);
+            // 閉じたら、今の状態（フィルターで暗くしている間だけ表示）に戻す
+            Check(false);
         }
 
         /// 設定画面のボタンから「一時的に暗くする」のメニューを開く
@@ -329,7 +409,7 @@ namespace BrightnessScheduler
             }
             form = new MainForm(settings, appIcon, () => status, Preview);
             if (monitors != null) form.SetMonitors(monitors);
-            form.SetDim(dimUntil, settings.DimFactor);
+            form.SetDim(dimUntil, settings.DimFactor, settings.FilterLevel);
             form.DimMenuRequested += delegate(object s, EventArgs e)
             {
                 // 暗くしている間はボタンが「元の明るさに戻す」になっているので、そのまま戻す
@@ -423,6 +503,7 @@ namespace BrightnessScheduler
             SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
             SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
             if (form != null && !form.IsDisposed) form.Close();
+            filter.Dispose();
             tray.Visible = false;
             tray.Dispose();
             worker.Dispose();

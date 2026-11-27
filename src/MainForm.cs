@@ -18,6 +18,7 @@ namespace BrightnessScheduler
         /// 一時的に暗くしている間は終わる時刻（「元に戻すまで」は DateTime.MaxValue）、暗くしていなければ null
         public DateTime? DimUntil;
         public int DimFactor = 50;
+        public int FilterLevel = Settings.FilterDefault;
         public readonly FlatButton ApplyButton, DimButton;
         public readonly ToggleSwitch AutoToggle;
         public readonly BrightnessChart Chart;
@@ -72,13 +73,17 @@ namespace BrightnessScheduler
                          : Paused ? "スケジュール上の明るさ  ·  停止中" : "現在の明るさ";
             Theme.DrawText(g, label, Theme.Small, Dimming ? Theme.Fg : Theme.FgDim, new Rectangle(tx, Theme.S(16), tw, Theme.S(20)), Theme.Left);
 
-            string big = Dimming ? dimmed + "%" : Target < 0 ? "スケジュールがありません" : Target + "%";
-            var font = !Dimming && Target < 0 ? Theme.Title : Theme.TimeBig;
+            int filter = DimFactor == Settings.FilterMode ? FilterLevel : 0;
+            string big = Dimming ? (filter > 0 ? "0% ＋フィルター" : dimmed + "%") : Target < 0 ? "スケジュールがありません" : Target + "%";
+            // 文字が長いとき（スケジュールなし・フィルター）は、少し小さい字にする
+            var font = (!Dimming && Target < 0) || (Dimming && filter > 0) ? Theme.Title : Theme.TimeBig;
             Theme.DrawText(g, big, font, !Dimming && Paused && Target >= 0 ? Theme.FgDim : Theme.Fg, new Rectangle(tx, Theme.S(36), tw, Theme.S(46)), Theme.Left);
 
             string sub;
             var now = DateTime.Now;
-            if (Dimming)
+            if (Dimming && filter > 0)
+                sub = "0% にして、フィルター " + filter + "% を重ねています";
+            else if (Dimming)
             {
                 string factor = DimFactor == 50 ? "半分" : DimFactor == 75 ? "3/4" : DimFactor == 25 ? "1/4" : DimFactor + "%";
                 sub = (Target < 0 ? "100%" : "スケジュールの明るさ " + Target + "%") + " の" + factor + "にしています";
@@ -346,10 +351,11 @@ namespace BrightnessScheduler
         }
 
         /// 一時的に暗くしている状態を表示に反映する（until が null なら暗くしていない）
-        public void SetDim(DateTime? until, int factor)
+        public void SetDim(DateTime? until, int factor, int filterLevel = Settings.FilterDefault)
         {
             header.DimUntil = until;
             header.DimFactor = factor;
+            header.FilterLevel = filterLevel;
             header.DimButton.Text = until.HasValue ? "元の明るさに戻す" : "一時的に暗くする";
             header.PerformLayout();
             RefreshStatus();

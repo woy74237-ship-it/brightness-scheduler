@@ -173,11 +173,26 @@ namespace BrightnessScheduler
         [DataMember(Order = 3)] public bool SkipHdr { get; set; }
         /// モニターごとの補正（つながっていないモニターの補正も残しておく）
         [DataMember(Order = 4)] public List<MonitorCorrection> Corrections { get; set; }
-        /// 一時的に暗くするときの割合（%）。今の明るさにこの割合を掛ける（75 / 50 / 25）
+        /// 一時的に暗くするときの暗さ。
+        ///   75 / 50 / 25 : 今の明るさにこの割合（%）を掛ける
+        ///   FilterMode（-1）: 明るさを 0% にしたうえで、画面に黒いフィルターを FilterLevel の濃さで重ねる
         [DataMember(Order = 5)] public int DimFactor { get; set; }
+        /// 画面を暗くするフィルターの濃さ（%、10〜90）
+        [DataMember(Order = 6)] public int FilterLevel { get; set; }
+        /// 前回「一時的に暗くする」で選んだ時間（分）。-1 は「元に戻すまで」。
+        /// 暗さだけを選んだときは、この時間で暗くする（古い設定ファイルには無いので 0 → 1 時間として扱う）
+        [DataMember(Order = 7)] public int DimMinutes { get; set; }
 
-        public static readonly int[] DimFactors = { 75, 50, 25 };
-        public static readonly string[] DimFactorLabels = { "少し暗く（3/4）", "半分に", "かなり暗く（1/4）" };
+        public const int DimUntilRestore = -1, DimMinutesDefault = 60;
+        public int LastDimMinutes { get { return DimMinutes == 0 ? DimMinutesDefault : DimMinutes; } }
+
+        public const int FilterMode = -1;
+        public const int FilterMin = 10, FilterMax = 90, FilterDefault = 50;
+        public static readonly int[] DimFactors = { 75, 50, 25, FilterMode };
+        public static readonly string[] DimFactorLabels = { "少し暗く（3/4）", "半分に", "かなり暗く（1/4）", "さらに暗く（0% ＋フィルター）" };
+
+        /// 今の暗さの設定で重ねるフィルターの濃さ（%）。フィルターを使わない設定なら 0
+        public int ActiveFilterLevel { get { return DimFactor == FilterMode ? FilterLevel : 0; } }
 
         public static readonly string Dir = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "BrightnessScheduler");
@@ -206,7 +221,15 @@ namespace BrightnessScheduler
             s.Entries.RemoveAll(e => e == null || !e.IsValid);
             if (s.Corrections == null) s.Corrections = new List<MonitorCorrection>();
             s.Corrections.RemoveAll(c => c == null || string.IsNullOrEmpty(c.Id));
+            // 開発中の「フィルター 弱（-40）／強（-65）」の設定は、フィルターの濃さに移す
+            if (s.DimFactor < 0 && s.DimFactor != FilterMode)
+            {
+                if (s.FilterLevel == 0) s.FilterLevel = -s.DimFactor;
+                s.DimFactor = FilterMode;
+            }
             if (Array.IndexOf(DimFactors, s.DimFactor) < 0) s.DimFactor = 50;  // 古い設定ファイルには無いので既定の「半分」に
+            if (s.FilterLevel < FilterMin || s.FilterLevel > FilterMax) s.FilterLevel = FilterDefault;
+            if (Array.IndexOf(new[] { 0, 30, 60, 120, DimUntilRestore }, s.DimMinutes) < 0) s.DimMinutes = 0;
             return s;
         }
 
@@ -288,6 +311,7 @@ namespace BrightnessScheduler
         /// 一時的に暗くしたときの明るさ。スケジュールが空（target が -1）なら 100% を基準にする
         public static int Dimmed(int target, int factor)
         {
+            if (factor <= 0) return 0;   // 「0% ＋フィルター」のときは明るさ 0%
             int baseValue = target < 0 ? 100 : target;
             return Math.Max(0, Math.Min(100, (int)Math.Round(baseValue * factor / 100.0)));
         }
