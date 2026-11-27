@@ -13,9 +13,9 @@ using Microsoft.Win32;
 [assembly: System.Reflection.AssemblyTitle("輝度スケジューラ")]
 [assembly: System.Reflection.AssemblyDescription("指定した時刻にディスプレイの明るさを変えるアプリ")]
 [assembly: System.Reflection.AssemblyProduct("輝度スケジューラ")]
-[assembly: System.Reflection.AssemblyVersion("1.1.1.0")]
-[assembly: System.Reflection.AssemblyFileVersion("1.1.1.0")]
-[assembly: System.Reflection.AssemblyInformationalVersion("1.1.1")]
+[assembly: System.Reflection.AssemblyVersion("1.2.0.0")]
+[assembly: System.Reflection.AssemblyFileVersion("1.2.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersion("1.2.0")]
 
 namespace BrightnessScheduler
 {
